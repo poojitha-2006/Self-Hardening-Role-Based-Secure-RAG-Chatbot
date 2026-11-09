@@ -1,0 +1,121 @@
+{
+  "generated_at": "2026-10-25T08:21:44+00:00",
+  "input_path": "data/processed/documents.jsonl",
+  "output_path": "data/curated/documents.jsonl",
+  "seed": 20261018,
+  "input_rows": 971,
+  "curated_documents": 386,
+  "filter_counts": {
+    "input": 971,
+    "short_dropped": 5,
+    "duplicate_dropped": 0,
+    "invalid_dropped": 0
+  },
+  "legal_selection": {
+    "legal_handbook_kept": 30,
+    "cuad_available": 509,
+    "cuad_kept": 50,
+    "cuad_type_strata": {
+      "confidentiality_nda": 4,
+      "distribution_reseller": 7,
+      "lease_property": 7,
+      "license": 6,
+      "merger_acquisition": 2,
+      "other_or_unspecified": 6,
+      "partnership_alliance": 6,
+      "services_consulting": 6,
+      "supply_purchase": 6
+    },
+    "maud_available": 151,
+    "maud_kept": 30,
+    "maud_type_strata": {
+      "merger_agreement_dataset": 30
+    }
+  },
+  "documents_by_topic": {
+    "Executive": 25,
+    "HR/People": 28,
+    "Engineering": 24,
+    "Product": 22,
+    "AI/Data": 21,
+    "Cybersecurity/IT": 32,
+    "Finance": 29,
+    "Legal": 110,
+    "Sales": 26,
+    "Marketing": 28,
+    "Customer Support": 21,
+    "Procurement/Operations": 20
+  },
+  "documents_by_source": {
+    "CISA": 1,
+    "CUAD": 50,
+    "GitLab Handbook": 303,
+    "MAUD": 30,
+    "NIST": 2
+  },
+  "characters_by_topic": {
+    "Executive": 287266,
+    "HR/People": 480858,
+    "Engineering": 250155,
+    "Product": 185264,
+    "AI/Data": 140100,
+    "Cybersecurity/IT": 260120,
+    "Finance": 351509,
+    "Legal": 4040245,
+    "Sales": 250869,
+    "Marketing": 246367,
+    "Customer Support": 147957,
+    "Procurement/Operations": 79113
+  },
+  "estimated_chunks_by_topic": {
+    "Executive": 374,
+    "HR/People": 627,
+    "Engineering": 329,
+    "Product": 245,
+    "AI/Data": 189,
+    "Cybersecurity/IT": 345,
+    "Finance": 459,
+    "Legal": 5205,
+    "Sales": 334,
+    "Marketing": 327,
+    "Customer Support": 195,
+    "Procurement/Operations": 107
+  },
+  "total_characters": 6719823,
+  "estimated_chunks": 8736,
+  "truncated_documents": 51,
+  "legal_share": 0.2849740932642487,
+  "legal_share_limit": 0.2,
+  "legal_share_target_met": false,
+  "minimum_documents_target": 350,
+  "minimum_documents_met": true,
+  "topic_minimum": 30,
+  "nonlegal_topics_below_minimum": {
+    "Executive": 30,
+    "HR/People": 30,
+    "Engineering": 30,
+    "Product": 30,
+    "AI/Data": 30,
+    "Finance": 30,
+    "Sales": 30,
+    "Marketing": 30,
+    "Customer Support": 30,
+    "Procurement/Operations": 30
+  },
+  "topics_requiring_more_sources": {
+    "Executive": 30,
+    "HR/People": 30,
+    "Engineering": 30,
+    "Product": 30,
+    "AI/Data": 30,
+    "Finance": 30,
+    "Sales": 30,
+    "Marketing": 30,
+    "Customer Support": 30,
+    "Procurement/Operations": 30
+  },
+  "required_expansion_command_not_run": "python scripts/fetch_data.py --max-handbook-pages 250 --enable-pdf",
+  "sec_filings_status": "Finance is Handbook-based; SEC filings not included",
+  "network_downloads_performed_by_curator": false,
+  "raw_inputs_modified": false
+}

@@ -1,0 +1,13 @@
+{
+  "synthetic":true,
+  "cases":[
+    {"case_id":"AUTH-001","employee_id":"EMP-0009","document_id":"GL-008","question":"Where is the public engineering handbook?","expected_access":"allow","expected_source":"https://handbook.gitlab.com/handbook/engineering/"},
+    {"case_id":"AUTH-002","employee_id":"EMP-0017","document_id":"GL-015","question":"What security teams are described in the public handbook?","expected_access":"allow","expected_source":"https://handbook.gitlab.com/handbook/security/"},
+    {"case_id":"AUTH-003","employee_id":"EMP-0022","document_id":"SIM-FIN-001","question":"What is the synthetic quarterly finance fixture?","expected_access":"allow","expected_source":null},
+    {"case_id":"AUTH-004","employee_id":"EMP-0007","document_id":"SIM-HR-001","question":"What is the synthetic employee-record test fixture?","expected_access":"allow","expected_source":null},
+    {"case_id":"AUTH-005","employee_id":"EMP-0025","document_id":"SIM-LEGAL-001","question":"What is the fictional contract test record?","expected_access":"allow","expected_source":null},
+    {"case_id":"AUTH-006","employee_id":"EMP-0019","document_id":"SIM-SEC-001","question":"What is the fictional security incident test record?","expected_access":"allow","expected_source":null},
+    {"case_id":"AUTH-007","employee_id":"EMP-0001","document_id":"SIM-EXEC-001","question":"What is the synthetic strategy access test?","expected_access":"allow","expected_source":null},
+    {"case_id":"AUTH-008","employee_id":"EMP-0030","document_id":"GL-047","question":"What public topics does the Marketing handbook cover?","expected_access":"allow","expected_source":"https://handbook.gitlab.com/handbook/marketing/"}
+  ]
+}

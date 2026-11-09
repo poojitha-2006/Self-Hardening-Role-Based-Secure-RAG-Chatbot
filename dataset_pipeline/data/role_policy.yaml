@@ -1,0 +1,61 @@
+version: 1
+organization: Simulated GitLab-inspired company
+synthetic_policy: true
+default_decision: deny
+seniority_grants_access: false
+notes:
+  - Public-source catalog entries are reference-only and classified Public.
+  - These rules are simulation examples, not GitLab policy.
+  - Executive titles have no blanket access based only on seniority.
+
+classifications:
+  Public:
+    allow_all_employees: true
+  Internal:
+    allowed_departments:
+      - Executive
+      - People / HR
+      - Engineering
+      - AI / Data
+      - Cybersecurity
+      - Finance
+      - Legal
+      - Sales
+      - Marketing
+      - Operations / IT
+  Confidential:
+    resource_rules:
+      synthetic_financial_report:
+        allowed_roles: [FINANCIAL_ANALYST, FINANCE_MANAGER, CFO]
+        allowed_departments: [Finance, Executive]
+      synthetic_contract_packet:
+        allowed_roles: [LEGAL_ASSOCIATE, CONTRACT_MANAGER, GENERAL_COUNSEL]
+        allowed_departments: [Legal]
+      synthetic_employee_record:
+        allowed_roles: [HR_MANAGER, CHRO]
+        allowed_departments: [People / HR]
+  Restricted:
+    resource_rules:
+      synthetic_security_incident:
+        allowed_roles: [SECURITY_ANALYST, SECURITY_ENGINEER, SOC_MANAGER, CISO]
+        allowed_departments: [Cybersecurity]
+      synthetic_executive_strategy:
+        allowed_roles: [CEO, COO, CTO, CFO]
+        allowed_departments: [Executive]
+
+documents:
+  - document_id: SIM-HR-001
+    resource_type: synthetic_employee_record
+    classification: Confidential
+  - document_id: SIM-FIN-001
+    resource_type: synthetic_financial_report
+    classification: Confidential
+  - document_id: SIM-LEGAL-001
+    resource_type: synthetic_contract_packet
+    classification: Confidential
+  - document_id: SIM-SEC-001
+    resource_type: synthetic_security_incident
+    classification: Restricted
+  - document_id: SIM-EXEC-001
+    resource_type: synthetic_executive_strategy
+    classification: Restricted

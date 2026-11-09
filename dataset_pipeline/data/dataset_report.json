@@ -1,0 +1,293 @@
+{
+  "generated_at": "2026-10-18T08:20:52+00:00",
+  "original_catalog_records": 68,
+  "additional_urls_discovered": 260,
+  "catalog_records_after_discovery": 990,
+  "actual_documents_downloaded": 963,
+  "usable_documents_after_extraction": 971,
+  "files_by_source_and_department": {
+    "GitLab Handbook": {
+      "Executive and company strategy": 2,
+      "People and HR": 5,
+      "Engineering and software development": 1,
+      "Product management": 2,
+      "Cybersecurity and IT": 13,
+      "AI, data and analytics": 2,
+      "Finance and accounting": 9,
+      "Legal, contracts and compliance": 9,
+      "Sales and customer success": 3,
+      "Marketing and communications": 8,
+      "Procurement and operations": 1
+    },
+    "NIST": {
+      "Cybersecurity and IT": 2
+    },
+    "CISA": {
+      "Cybersecurity and IT": 1
+    },
+    "GitLab": {
+      "Executive and company strategy": 23,
+      "Sales and customer success": 23,
+      "Cybersecurity and IT": 18,
+      "Engineering and software development": 23,
+      "People and HR": 23,
+      "Finance and accounting": 20,
+      "Marketing and communications": 21,
+      "AI, data and analytics": 21,
+      "Customer support": 21,
+      "Legal, contracts and compliance": 21,
+      "Product management": 20,
+      "Procurement and operations": 19
+    },
+    "The Atticus Project": {
+      "Legal, contracts and compliance": 660
+    }
+  },
+  "usable_documents_by_department": {
+    "AI, data and analytics": 23,
+    "Customer support": 21,
+    "Cybersecurity and IT": 34,
+    "Engineering and software development": 24,
+    "Executive and company strategy": 25,
+    "Finance and accounting": 29,
+    "Legal, contracts and compliance": 690,
+    "Marketing and communications": 29,
+    "People and HR": 28,
+    "Procurement and operations": 20,
+    "Product management": 22,
+    "Sales and customer success": 26
+  },
+  "usable_documents_by_source": {
+    "CISA": 1,
+    "GitLab": 253,
+    "GitLab Handbook": 55,
+    "NIST": 2,
+    "The Atticus Project": 660
+  },
+  "total_extracted_characters": 83676688,
+  "total_raw_file_bytes": 769771487,
+  "duplicate_document_count": 2,
+  "download_status_counts": {
+    "downloaded": 963,
+    "failed": 10,
+    "partial": 10,
+    "reference_only": 7
+  },
+  "failed_records": [
+    {
+      "document_id": "GL-028",
+      "url": "https://handbook.gitlab.com/handbook/finance/authorization-matrix/",
+      "error": "Extracted content is empty or too short (206 characters)"
+    },
+    {
+      "document_id": "GL-060",
+      "url": "https://www.sec.gov/edgar/browse/?CIK=1653482&owner=exclude",
+      "error": "SEC requests require a real contact User-Agent; set SEC_USER_AGENT before enabling SEC downloads"
+    },
+    {
+      "document_id": "GL-061",
+      "url": "https://data.sec.gov/submissions/CIK0001653482.json",
+      "error": "SEC requests require a real contact User-Agent; set SEC_USER_AGENT before enabling SEC downloads"
+    },
+    {
+      "document_id": "GL-SITEMAP-044B5633ED24CE",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/1password/group/",
+      "error": "Extracted content is empty or too short (238 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-6AF91D1AAC5797",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/1password/passkey/",
+      "error": "Extracted content is empty or too short (245 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-7DFCB9C97C8E6F",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/1password/vault/",
+      "error": "Extracted content is empty or too short (238 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-47D71016A4A80E",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/accesschk/",
+      "error": "Extracted content is empty or too short (246 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-2C2B012537DE3F",
+      "url": "https://handbook.gitlab.com/handbook/business-technology/enterprise-applications/guides/coupa-supplier/",
+      "error": "Extracted content is empty or too short (198 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-8CBD45519C6592",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/macos/",
+      "error": "Extracted content is empty or too short (233 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-79DE867C10AD41",
+      "url": "https://handbook.gitlab.com/handbook/finance/financial-planning-and-analysis/fpa-definitions/",
+      "error": "Extracted content is empty or too short (212 characters)"
+    }
+  ],
+  "reference_only_records": [
+    {
+      "document_id": "GL-062",
+      "url": "https://github.com/The-Atticus-Project/cuad",
+      "error": "Repository page is a dataset reference, not the dataset; review source license and download procedure manually"
+    },
+    {
+      "document_id": "GL-063",
+      "url": "https://github.com/The-Atticus-Project/maud",
+      "error": "Repository page is a dataset reference, not the dataset; review source license and download procedure manually"
+    },
+    {
+      "document_id": "SIM-HR-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-FIN-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-LEGAL-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-SEC-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-EXEC-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    }
+  ],
+  "duplicate_hashes": {
+    "23255988c8f39e0b67d7ff8a2b316a17c3bf4cc0557141d6a7e6e9cc7d770ad3": 2,
+    "06a4f29696f7446dbb49a2da8f465ffdaf81204781729d7896c00cb80435b5ab": 2
+  },
+  "empty_or_short_extractions": [
+    "GL-028",
+    "GL-038",
+    "GL-055",
+    "GL-060",
+    "GL-061",
+    "GL-SITEMAP-D4F98766C28D5E",
+    "GL-SITEMAP-044B5633ED24CE",
+    "GL-SITEMAP-6AF91D1AAC5797",
+    "GL-SITEMAP-7DF7DE455F16B6",
+    "GL-SITEMAP-7DFCB9C97C8E6F",
+    "GL-SITEMAP-44C8257364AE09",
+    "GL-SITEMAP-47D71016A4A80E",
+    "GL-SITEMAP-0F197ACD4E6DF9",
+    "GL-SITEMAP-A558B3A1FD0BF9",
+    "GL-SITEMAP-2C2B012537DE3F",
+    "GL-SITEMAP-E2D36B5DE4A49E",
+    "GL-SITEMAP-8CBD45519C6592",
+    "GL-SITEMAP-674D5917CCA814",
+    "GL-SITEMAP-3EF08B035DF161",
+    "GL-SITEMAP-79DE867C10AD41"
+  ],
+  "license_and_attribution": {
+    "GitLab Handbook": "CC BY-SA 4.0 as stated by handbook pages; provide attribution and share adaptations alike.",
+    "CUAD": "CC BY 4.0 according to The Atticus Project licensing page.",
+    "MAUD": "CC BY 4.0 according to The Atticus Project licensing page.",
+    "SEC EDGAR": "Public filing data; adhere to SEC fair-access and user-agent requirements.",
+    "NIST/CISA": "Review each item for government and third-party copyright notices."
+  },
+  "missing_sources_and_manual_follow_up": [
+    {
+      "document_id": "GL-028",
+      "url": "https://handbook.gitlab.com/handbook/finance/authorization-matrix/",
+      "error": "Extracted content is empty or too short (206 characters)"
+    },
+    {
+      "document_id": "GL-060",
+      "url": "https://www.sec.gov/edgar/browse/?CIK=1653482&owner=exclude",
+      "error": "SEC requests require a real contact User-Agent; set SEC_USER_AGENT before enabling SEC downloads"
+    },
+    {
+      "document_id": "GL-061",
+      "url": "https://data.sec.gov/submissions/CIK0001653482.json",
+      "error": "SEC requests require a real contact User-Agent; set SEC_USER_AGENT before enabling SEC downloads"
+    },
+    {
+      "document_id": "GL-062",
+      "url": "https://github.com/The-Atticus-Project/cuad",
+      "error": "Repository page is a dataset reference, not the dataset; review source license and download procedure manually"
+    },
+    {
+      "document_id": "GL-063",
+      "url": "https://github.com/The-Atticus-Project/maud",
+      "error": "Repository page is a dataset reference, not the dataset; review source license and download procedure manually"
+    },
+    {
+      "document_id": "SIM-HR-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-FIN-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-LEGAL-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-SEC-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "SIM-EXEC-001",
+      "url": null,
+      "error": "Legacy synthetic fixture excluded from public-source dataset; existing legacy file preserved"
+    },
+    {
+      "document_id": "GL-SITEMAP-044B5633ED24CE",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/1password/group/",
+      "error": "Extracted content is empty or too short (238 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-6AF91D1AAC5797",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/1password/passkey/",
+      "error": "Extracted content is empty or too short (245 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-7DFCB9C97C8E6F",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/1password/vault/",
+      "error": "Extracted content is empty or too short (238 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-47D71016A4A80E",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/accesschk/",
+      "error": "Extracted content is empty or too short (246 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-2C2B012537DE3F",
+      "url": "https://handbook.gitlab.com/handbook/business-technology/enterprise-applications/guides/coupa-supplier/",
+      "error": "Extracted content is empty or too short (198 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-8CBD45519C6592",
+      "url": "https://handbook.gitlab.com/handbook/security/corporate/systems/macos/",
+      "error": "Extracted content is empty or too short (233 characters)"
+    },
+    {
+      "document_id": "GL-SITEMAP-79DE867C10AD41",
+      "url": "https://handbook.gitlab.com/handbook/finance/financial-planning-and-analysis/fpa-definitions/",
+      "error": "Extracted content is empty or too short (212 characters)"
+    }
+  ],
+  "target_documents": 500,
+  "target_reached": true,
+  "validation": {
+    "processed_jsonl_records": 971,
+    "metadata_records": 971,
+    "validation_errors": [],
+    "valid": true
+  }
+}

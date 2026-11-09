@@ -1,0 +1,83 @@
+# ============================================================
+# secure-rag configuration
+# All settings can be overridden via environment variables
+# or a local .env file (KEY=VALUE format).
+# ============================================================
+
+# --- LLM Settings ---
+llm:
+  provider: ollama                   # Only 'ollama' supported
+  model: llama3.2:3b                 # Change to qwen2.5:3b if preferred
+  base_url: http://localhost:11434
+  temperature: 0.0                   # 0 for deterministic eval; raise for chat UX
+  max_tokens: 512
+  timeout: 120                       # seconds
+
+# --- Embedding Settings ---
+embeddings:
+  provider: sentence_transformers    # 'sentence_transformers' or 'ollama'
+  model: all-MiniLM-L6-v2           # sentence-transformers model name
+  ollama_model: nomic-embed-text     # used when provider = ollama
+  device: cpu                        # 'cpu' or 'cuda'
+
+# --- ChromaDB Settings ---
+chroma:
+  persist_directory: ./data/chroma_db
+  rag_collection: rag_docs
+  attack_collection: known_attacks
+
+# --- Chunking Settings ---
+chunking:
+  chunk_size: 400
+  chunk_overlap: 80
+  separators: ["\n\n", "\n", ". ", " "]
+
+# --- Auth Settings ---
+auth:
+  secret_key: "CHANGE_ME_IN_PRODUCTION_USE_LONG_RANDOM_STRING"
+  algorithm: HS256
+  token_expire_minutes: 60
+
+# --- Role Hierarchy (higher index = higher privilege) ---
+roles:
+  hierarchy: [Analyst, Manager, Administrator]
+
+# --- Guardrail Settings ---
+guardrails:
+  mode: adaptive                     # none | static | adaptive
+  input_guard:
+    enabled: true
+    block_threshold: 0.6             # risk score >= this → block
+  context_guard:
+    enabled: true
+    injection_similarity_threshold: 0.75
+  output_guard:
+    enabled: true
+    restricted_similarity_threshold: 0.80
+  adaptive_guard:
+    enabled: true
+    similarity_threshold: 0.72      # cosine similarity to known attacks → raise risk
+    llm_classifier_enabled: true    # secondary LLM-based check
+    top_k: 5                        # how many known attacks to retrieve
+
+# --- Red-Team Settings ---
+redteam:
+  seed: 42
+  attacker_roles: [Analyst, Manager]
+  max_mutations_per_attack: 5
+  mutation_dedupe_threshold: 0.92   # cosine sim → skip if too similar
+  near_miss_threshold: 0.5          # store if risk score >= this even if not successful
+
+# --- Evaluation Settings ---
+eval:
+  seeds: [42, 123, 777]
+  rounds: 5
+  train_split: 0.6                  # fraction of attacks used to seed attack store
+  benign_queries_per_role: 50
+  results_dir: ./eval/results
+
+# --- Logging ---
+logging:
+  level: INFO
+  structured: true                  # JSON structured logs
+  log_file: ./logs/app.log
