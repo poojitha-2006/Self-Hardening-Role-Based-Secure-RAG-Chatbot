@@ -2,6 +2,8 @@
 doc_id: doc-007
 title: Performance Review Guidelines & Calibration Notes (Manager Only)
 min_role: Manager
+department: HR
+classification: Confidential
 is_injection_fixture: false
 ---
 # Performance Review Guidelines & Calibration Notes 2024

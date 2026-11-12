@@ -1,259 +1,114 @@
-# Secure RAG & Enterprise Dataset Platform
+# Secure RAG Chatbot and Public-Text Dataset Pipeline
 
-A unified, production-grade repository combining:
-1. **`secure-rag/`**: A Self-Hardening Secure RAG Chatbot featuring multi-layer guardrails (Input Guard, RBAC Vector Retrieval, Context Guard, Adaptive Store, and Output Guard).
-2. **`dataset_pipeline/`**: A public enterprise document collection and curation pipeline (971 validated documents from GitLab Handbook, NIST, CISA, CUAD, and MAUD) with attack and benign benchmark builders.
+This repository contains two related components:
 
----
+- `secure-rag/`: a FastAPI and Streamlit retrieval-augmented chatbot with JWT authentication, simulated role/department access policy, ChromaDB retrieval, guardrails, and red-team/evaluation tools.
+- `dataset_pipeline/`: scripts for collecting, processing, curating, and validating real public enterprise documents and building evaluation datasets.
 
-## 1. Unified Directory Structure
+The chatbot's department and classification policy is simulated for this project. The curated corpus consists of real public text; public-source documents are not confidential company records. Separate fictional chatbot fixtures are used to exercise simulated access controls and canary checks.
 
-```text
-majorproject/
-├── README.md                             # Unified system documentation (this file)
-├── requirements.txt                      # Consolidated dependencies (chatbot + dataset pipeline)
-├── .env.example                          # Safe environment configuration template
-├── run_tests.ps1                         # PowerShell test runner for both subprojects
-│
-├── secure-rag/                           # Self-Hardening Secure RAG Chatbot
-│   ├── pytest.ini                        # Scoped pytest configuration for secure-rag
-│   ├── requirements.txt                  # Chatbot-specific pinned dependencies
-│   ├── config.yaml                       # Application configuration (LLM, RAG, ChromaDB, Guardrails)
-│   ├── .env.example                      # Chatbot-specific environment template
-│   ├── app/                              # Chatbot application source
-│   │   ├── auth.py                       # JWT authentication, bcrypt passwords, role verification
-│   │   ├── config.py                     # Centralized settings via pydantic-settings
-│   │   ├── main.py                       # FastAPI application & REST endpoints
-│   │   ├── schemas.py                    # Pydantic request & response schemas
-│   │   ├── guardrails/                   # Guardrail layers
-│   │   │   ├── input_guard.py            # Static prompt injection & obfuscation detector
-│   │   │   ├── context_guard.py          # Indirect injection scanner for retrieved context
-│   │   │   ├── output_guard.py           # Canary leakage & restricted content filter
-│   │   │   └── adaptive.py               # Self-hardening nearest-neighbor attack memory
-│   │   ├── rag/                          # Retrieval-Augmented Generation engine
-│   │   │   ├── embedder.py               # SentenceTransformers / Ollama embeddings
-│   │   │   ├── ingest.py                 # Document chunking, frontmatter parsing, & embedding
-│   │   │   ├── llm.py                    # Ollama client interface
-│   │   │   ├── pipeline.py               # Full RAG execution pipeline
-│   │   │   └── retriever.py              # RBAC-filtered vector retrieval
-│   │   └── store/                        # Storage abstraction layers
-│   │       ├── attack_store.py           # ChromaDB collection for known attack signatures
-│   │       └── vector_store.py           # ChromaDB collection for RBAC document chunks
-│   ├── data/                             # Chatbot runtime data
-│   │   ├── canaries.json                 # Chatbot canary mapping (canary token -> minimum role)
-│   │   ├── docs/                         # Seed RBAC markdown documents
-│   │   │   ├── admin/                    # Administrator documents (salary bands, M&A, credentials)
-│   │   │   ├── manager/                  # Manager documents (budgets, reviews, negotiations)
-│   │   │   ├── analyst/                  # Analyst documents (handbook, policies, roadmap)
-│   │   │   └── fixtures/                 # Injection test fixtures
-│   │   └── chroma_db/                    # Local persistent vector database
-│   ├── eval/                             # Chatbot evaluation & experiment harness
-│   │   ├── metrics.py                    # ASR, overblocking, precision, recall, F1 metrics
-│   │   ├── plots.py                      # Matplotlib & seaborn experiment plots
-│   │   ├── run_experiment.py             # Multi-round self-hardening evaluation runner
-│   │   └── datasets/
-│   │       └── benign_queries.json       # Benchmark benign queries per role
-│   ├── redteam/                          # Live red-teaming execution suite
-│   │   ├── attacks.json                  # 65 adversarial prompt injection attacks
-│   │   ├── canary.py                     # Canary leak detection & normalized matching
-│   │   ├── mutator.py                    # Adversarial mutation engine (base64, leet, wraps)
-│   │   ├── report.py                     # Red-team campaign report generator
-│   │   └── runner.py                     # Execution harness against running API
-│   └── tests/                            # Chatbot test suite
-│       └── test_data_integrity.py        # Static asset, schema, canary, & config validation
-│
-└── dataset_pipeline/                     # Public Enterprise Document Collection & Curation
-    ├── pytest.ini                        # Scoped pytest configuration for dataset_pipeline
-    ├── requirements.txt                  # Dataset pipeline dependencies (requests, bs4, pypdf, pyyaml)
-    ├── README.md                         # Dataset collection methodology overview
-    ├── docs/                             # In-depth dataset documentation
-    │   ├── DATASETS.md                   # Dataset inventory
-    │   ├── DATASET_METHODOLOGY.md        # Provenance, licensing, and reproducibility guide
-    │   └── DATA_METHODOLOGY.md           # Processing and filtering specifications
-    ├── documents/
-    │   └── catalog.json                  # Original document source catalog (68 records)
-    ├── scripts/                          # Dataset curation and collection scripts
-    │   ├── fetch_data.py                 # Crawler for GitLab Handbook, NIST, CISA, and SEC EDGAR
-    │   ├── curate_corpus.py              # Filter, deduplicate, and sample corpus
-    │   ├── chunk_documents.py            # Role-based document chunker
-    │   ├── validate_datasets.py          # Integrity validation for curated data
-    │   └── build_all_datasets.ps1        # Full pipeline automation script
-    ├── redteam/
-    │   └── build_attack_dataset.py       # Offline attack split builder (train, val, test)
-    ├── eval/
-    │   └── build_benign_set.py           # Benign QA and refusal probe generator
-    ├── evaluation/                       # Legacy evaluation query sets
-    │   ├── authorized_questions.json
-    │   └── unauthorized_access_tests.json
-    ├── attacks/                          # Legacy raw attack datasets
-    │   ├── bipia_test.json
-    │   └── tensor_trust_training.json
-    ├── tests/
-    │   └── test_dataset_pipeline.py      # Unit & integration tests for pipeline (20 tests)
-    └── data/                             # Dataset storage (preserves internal relative paths)
-        ├── raw/                          # [READ-ONLY] Original scraped HTML, PDF, and TXT payloads
-        ├── processed/                    # 971 normalized markdown documents by topic
-        ├── curated/                      # Curated documents.jsonl and curation_report.json
-        ├── attacks/                      # Generated attack dataset splits and manifest
-        ├── benign/                       # Generated benign queries and report
-        ├── canaries.json                 # Synthetic fixture canary schema
-        ├── employees.json                # Employee access control database
-        └── role_policy.yaml              # Department and role access rules
-```
+## Current verified state
 
----
+- The curated corpus contains **386 documents** in `dataset_pipeline/data/curated/documents.jsonl`. The separate processed corpus contains **971 documents**.
+- The dataset pipeline's current attack manifest reports **60 handwritten training attacks, 0 validation attacks, and 0 test attacks**. The five listed external attack sources were not attempted because network access was not authorized; this manifest has no source marked `unavailable`.
+- The chatbot's separate `secure-rag/redteam/attacks.json` contains **65 attacks**: 46 train and 19 held-out test.
+- From `secure-rag/`, `python -m app.rag.ingest --force` was run successfully. It read the curated JSONL plus 21 simulated chatbot fixture documents, indexed **407 documents and 1,987 chunks**, and found all **10 of 10** registered chatbot canaries in ingested chunks.
+- Live API checks with the installed Ollama `llama3.2:latest` model confirmed that an Engineering Analyst did not receive HR-confidential sources while the HR Manager received the relevant HR source. Five injection probes were blocked with no restricted source or canary returned.
+- The latest combined test run passed **20 dataset tests and 16 chatbot tests**. Two FastAPI `on_event` deprecation warnings remain.
+- The final 10-attack/10-benign smoke run (seed 42) measured **0% ASR, 0% FPR, 80% answer accuracy** in each of baseline, static, and adaptive rounds. Mean latency across attack and benign requests was **7,191.2 ms**, **9,712.9 ms**, and **8,988.0 ms**, respectively. These small-sample results are not statistically conclusive.
+- The smoke run wrote JSON/CSV results, five plots, and a Markdown report under `secure-rag/eval/results/`. Exact held-out attack text matches in the known-attacks store after the run: **0**.
 
-## 2. Dataset Paths & Shared Data Layout
+## Setup
 
-| Purpose | Location | Description |
-| :--- | :--- | :--- |
-| **Chatbot RBAC Corpus** | `secure-rag/data/docs/` | 21 Markdown files with YAML frontmatter (`min_role: Analyst/Manager/Administrator`). |
-| **Chatbot Canaries** | `secure-rag/data/canaries.json` | Active canary mapping (`token -> minimum role`). |
-| **Curated Public Corpus** | `dataset_pipeline/data/curated/documents.jsonl` | 387 bounded, deduplicated enterprise documents. |
-| **Processed Public Docs** | `dataset_pipeline/data/processed/` | 971 Markdown documents across 12 business topics. |
-| **Raw Scraped Sources** | `dataset_pipeline/data/raw/` | Archival, read-only HTML, PDF, and contract texts. |
-| **Dataset Canaries** | `dataset_pipeline/data/canaries.json` | Synthetic fixture tokens for dataset integrity checks. |
-| **Attack Benchmarks** | `dataset_pipeline/data/attacks/` | Offline train (`300`), validation (`100`), test (`300`) splits. |
-| **Chatbot Attack Library**| `secure-rag/redteam/attacks.json` | 65 targeted prompt injections for live red-teaming. |
+Use Python 3.12+ and install the repository dependencies from the root:
 
----
-
-## 3. Installation & Environment Setup
-
-### Option A: Unified Environment (Recommended)
-From the project root:
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-### Option B: Separate Environments
-To install dependencies for each component individually:
+Ollama is used for text generation; embeddings use ChromaDB's local MiniLM embedding function by default. Pull the model configured in `secure-rag/config.yaml` if it is not already installed:
 
-**Chatbot only (`secure-rag`):**
 ```powershell
-cd secure-rag
-python -m pip install -r requirements.txt
-cd ..
+ollama pull llama3.2:latest
 ```
 
-**Dataset Pipeline only (`dataset_pipeline`):**
-```powershell
-cd dataset_pipeline
-python -m pip install -r requirements.txt
-cd ..
-```
+Copy `.env.example` to `.env` only if you need local overrides. Do not commit `.env` or production credentials.
 
-### Environment Configuration
-Copy `.env.example` to `.env` in the root or in `secure-rag/`:
-```powershell
-Copy-Item .env.example .env
-```
-Ensure passwords and API keys are configured securely. Never commit `.env` to source control.
+## Tests
 
----
+Run both test suites from the repository root:
 
-## 4. Commands to Run Tests
-
-### Run All Tests Across Both Projects
-From the project root:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run_tests.ps1
 ```
 
-### Run Tests Individually
-- **Dataset Pipeline tests (20 tests):**
-  ```powershell
-  pytest dataset_pipeline
-  ```
-- **Chatbot data integrity & configuration tests (7 tests):**
-  ```powershell
-  pytest secure-rag
-  ```
-
----
-
-## 5. Commands to Run the Dataset Pipeline
-
-All pipeline commands are executed from `dataset_pipeline/`:
+The runner invokes `python -m pytest` for both subprojects. This avoids relying on the `pytest.exe` launcher, which may be blocked by Windows application-control policy. Run an individual suite with:
 
 ```powershell
-cd dataset_pipeline
+python -m pytest dataset_pipeline
+python -m pytest secure-rag
 ```
 
-1. **Curate Corpus (Deduplicate & Filter):**
-   ```powershell
-   python scripts/curate_corpus.py
-   ```
-2. **Build Attack Dataset (Offline handwritten & remote splits):**
-   ```powershell
-   python redteam/build_attack_dataset.py
-   ```
-3. **Build Benign Query Set (Generates grounded QA pairs):**
-   ```powershell
-   python eval/build_benign_set.py --model llama3.2:latest
-   ```
-4. **Validate Dataset Quality & Hashes:**
-   ```powershell
-   python scripts/validate_datasets.py
-   ```
-5. **Or Run the Complete Automated Pipeline:**
-   ```powershell
-   .\scripts\build_all_datasets.ps1
-   ```
+## Build the chatbot index
 
----
-
-## 6. Commands to Start and Test the Chatbot
-
-All chatbot commands are executed from `secure-rag/`:
+From `secure-rag/`, ingest the simulated chatbot fixtures and the curated public corpus:
 
 ```powershell
-cd secure-rag
+python -m app.rag.ingest --force
 ```
 
-1. **Ingest Documents into ChromaDB:**
-   Embeds all documents in `data/docs/` with RBAC metadata into the local vector store:
-   ```powershell
-   python -m app.rag.ingest --force
-   ```
+The chatbot ingestion source is `dataset_pipeline/data/curated/documents.jsonl`, **not** `dataset_pipeline/data/processed/documents.jsonl`. `--force` recreates the chatbot's ChromaDB document collection before indexing.
 
-2. **Start the FastAPI Backend:**
-   Starts the chatbot API on `http://localhost:8000`:
-   ```powershell
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   ```
+## Run the application
 
-3. **Start the Streamlit UI:**
-   ```powershell
-   streamlit run app/ui.py
-   # Or from the project root:
-   streamlit run app.py
-   ```
+Open two PowerShell terminals from `secure-rag/`.
 
-   **Three UI Screens:**
-   - **Screen 1: Login & Role Switcher (Sidebar)**
-     - Authenticates via JWT and PBKDF2 hashing.
-     - Role comes strictly from server-side token claims, never from user prompt.
-     - 5 seeded demo users with role/dept badges: `priya.hr` (HR Mgr · HR), `alex.emp` (Employee · Engineering), `sarah.sec` (Security Admin · Cybersecurity), `marcus.fin` (Finance Mgr · Finance), `david.exec` (Executive · Executive).
-     - "Switch user" dropdown allows instant role-switching for viva demonstrations.
-   - **Screen 2: Chat Page**
-     - Full chat history with cited markdown source badges.
-     - Verdict line per turn: `✔ Input ✔ Context ✔ Output 312 ms` (Allowed) or `✖ Blocked by Input guard (risk 0.91)` (Blocked).
-     - Admin-only "Show retrieved chunks" debug expander (hidden for non-administrators).
-   - **Screen 3: Security Dashboard (Admin Only)**
-     - Live KPI cards: Known Attacks (87), Blocked Today (14), False Positives (3%), Avg Latency (~312 ms).
-     - Matplotlib Attack Success Rate (ASR) by round showing steep decline across self-hardening rounds (R0 -> R3).
-     - Interactive `[Run red-team round]` button with live progress bar.
-     - Recent blocked attempts table from SQLite `audit_log` and Attack Store browser.
+Terminal 1 — FastAPI:
 
-4. **Execute Red-Team Attack Campaign:**
-   Launches 65 adversarial attacks against the running chatbot server:
-   ```powershell
-   python -m redteam.runner --split test --report-format markdown
-   ```
+```powershell
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-5. **Run Multi-Round Evaluation Experiment:**
-   Executes baseline, static, and adaptive rounds with metric computations:
-   ```powershell
-   python eval/run_experiment.py
-   ```
+Terminal 2 — Streamlit:
+
+```powershell
+python -m streamlit run app/ui.py
+```
+
+The API health endpoint is `http://127.0.0.1:8000/health`; the UI is normally served at `http://localhost:8501`. Demo logins use the seeded fictional users and password `password`; do not reuse these demo credentials in production.
+
+## Smoke experiment
+
+With the index built and Ollama running, execute from `secure-rag/`:
+
+```powershell
+python -m eval.run_experiment --smoke --seed 42
+```
+
+The smoke mode samples 10 attacks from the chatbot's held-out test split and 10 benign queries, runs baseline/static/adaptive rounds, and checks that exact held-out attack text is not in the known-attacks store. It writes JSON and CSV results, plots, and a Markdown report under `secure-rag/eval/results/` by default. This is a small wiring check, **not** the full experiment.
+
+The full evaluation is intentionally not documented as validated here. Do not infer full-experiment quality from smoke results.
+
+## Dataset pipeline commands
+
+From `dataset_pipeline/`, run the existing scripts as needed:
+
+```powershell
+python scripts/curate_corpus.py
+python redteam/build_attack_dataset.py
+python scripts/validate_datasets.py
+```
+
+The public corpus methodology, source inventory, licensing notes, and current acquisition status are documented under `dataset_pipeline/docs/`. Raw and processed dataset inputs should be treated as source data and are not modified by chatbot ingestion.
+
+## Known limitations
+
+- The dataset-pipeline attack manifest currently has an empty validation and test split. Its 60 handwritten examples are training-only; external sources were not downloaded.
+- The separate chatbot test split has 19 attacks, so any smoke estimate is small and not statistically conclusive.
+- Access control uses simulated roles, departments, and document classifications. It is not a production identity provider or real company authorization policy.
+- The curated public corpus is deliberately bounded during chatbot ingestion (up to five chunks per document); it is not a complete index of all processed text.
+- The current persistent known-attacks collection contains legacy entries that may not have `source_split` metadata. New experiment seeding labels training entries and prevents held-out test text from being learned, but legacy provenance is incomplete.
+- The Streamlit dashboard contains demonstration-oriented values and should not be treated as a source of measured evaluation metrics unless those are populated from a completed experiment.
+- Prompt-injection defenses are layered mitigations, not a guarantee against novel attacks. Review failures and false positives before drawing security conclusions.
+- Streamlit's health endpoint and initial page load were checked. Interactive login/chat UI verification was not completed; the live API login/chat path was exercised separately.
+- Production deployment requires a strong secret key, secure user/password management, restricted CORS, operational logging, and a reviewed access policy.

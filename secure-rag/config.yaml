@@ -7,7 +7,7 @@
 # --- LLM Settings ---
 llm:
   provider: ollama                   # Only 'ollama' supported
-  model: llama3.2:3b                 # Change to qwen2.5:3b if preferred
+  model: llama3.2:latest              # Change to another locally installed Ollama model if preferred
   base_url: http://localhost:11434
   temperature: 0.0                   # 0 for deterministic eval; raise for chat UX
   max_tokens: 512

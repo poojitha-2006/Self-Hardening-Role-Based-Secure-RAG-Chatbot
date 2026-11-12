@@ -2,6 +2,8 @@
 doc_id: doc-006
 title: Q3 2024 Department Budget Allocations (Manager Confidential)
 min_role: Manager
+department: Finance
+classification: Confidential
 is_injection_fixture: false
 ---
 # Q3 2024 Department Budget Allocations

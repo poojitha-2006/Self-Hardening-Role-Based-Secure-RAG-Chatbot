@@ -2,6 +2,8 @@
 doc_id: doc-010
 title: Sales Performance Report Q3 2024 (Manager View)
 min_role: Manager
+department: Sales
+classification: Confidential
 is_injection_fixture: false
 ---
 # Sales Performance Report Q3 2024 — Manager View

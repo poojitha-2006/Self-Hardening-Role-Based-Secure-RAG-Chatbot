@@ -17,7 +17,7 @@ Security design:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.config import role_level, settings
 from app.rag.embedder import get_embedder
@@ -27,7 +27,10 @@ from app.store.vector_store import get_vector_store
 logger = logging.getLogger(__name__)
 
 
-def _build_rbac_filter(user_role: str) -> Dict[str, Any]:
+def _build_rbac_filter(
+    user_role: str,
+    user_department: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Build a ChromaDB `where` filter that returns only chunks accessible
     to the given user_role.
@@ -39,10 +42,44 @@ def _build_rbac_filter(user_role: str) -> Dict[str, Any]:
         r for r in settings.roles_hierarchy
         if role_level(r) <= role_level(user_role)
     ]
-    if len(accessible_roles) == 1:
-        return {"min_role": {"$eq": accessible_roles[0]}}
-    # Use $in operator for multiple allowed roles
-    return {"min_role": {"$in": accessible_roles}}
+    role_filter = {"min_role": {"$in": accessible_roles}}
+    if not user_department:
+        return {
+            "$and": [
+                role_filter,
+                {"classification": {"$eq": "Public"}},
+            ]
+        }
+    return {
+        "$and": [
+            role_filter,
+            {
+                "$or": [
+                    {"classification": {"$eq": "Public"}},
+                    {"department": {"$eq": user_department}},
+                ]
+            },
+        ]
+    }
+
+
+def _can_access_chunk(
+    metadata: Dict[str, Any],
+    user_role: str,
+    user_department: Optional[str],
+) -> bool:
+    """Enforce role and simulated department policy; department denial wins."""
+    minimum_role = metadata.get("min_role", "Administrator")
+    if role_level(user_role) < role_level(minimum_role):
+        return False
+
+    classification = metadata.get("classification", "Public")
+    document_department = metadata.get("department", "")
+    if classification != "Public":
+        return bool(document_department and user_department) and (
+            user_department.casefold() == document_department.casefold()
+        )
+    return True
 
 
 def retrieve(
@@ -50,6 +87,7 @@ def retrieve(
     user_role: str,
     n_results: int = 5,
     include_injection_fixtures: bool = False,
+    user_department: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve relevant chunks for `query` that are accessible to `user_role`.
@@ -57,6 +95,7 @@ def retrieve(
     Args:
         query: The user's question text.
         user_role: The authenticated role from the JWT (never from query).
+        user_department: The authenticated user's simulated department.
         n_results: Max number of chunks to return.
         include_injection_fixtures: If False, skip docs labeled as test fixtures.
 
@@ -70,7 +109,7 @@ def retrieve(
     query_embedding = embedder.embed_one(query)
 
     # Build RBAC where clause (PRIMARY filter)
-    where_clause = _build_rbac_filter(user_role)
+    where_clause = _build_rbac_filter(user_role, user_department)
 
     # Execute RBAC-filtered query
     raw_results = store.query(
@@ -82,13 +121,12 @@ def retrieve(
     # POST-RETRIEVAL ASSERTION (defense in depth)
     safe_results = []
     for chunk in raw_results:
-        chunk_min_role = chunk["metadata"].get("min_role", "Administrator")
-        if role_level(user_role) < role_level(chunk_min_role):
+        if not _can_access_chunk(chunk["metadata"], user_role, user_department):
             # This should NEVER happen given the primary filter — log as security event
             logger.error(
                 "SECURITY VIOLATION: RBAC primary filter bypass detected! "
                 "user_role=%s chunk_min_role=%s chunk_id=%s",
-                user_role, chunk_min_role, chunk["id"],
+                user_role, chunk["metadata"].get("min_role", "Administrator"), chunk["id"],
             )
             continue  # Drop the chunk
 

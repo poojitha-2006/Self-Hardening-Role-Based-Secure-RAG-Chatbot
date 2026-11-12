@@ -674,6 +674,7 @@ if current_tab == "💬 Chat Screen":
                         message=query_text,
                         user_role=cur_user["role"],
                         username=cur_user["username"],
+                        user_department=cur_user["department"],
                     )
                     ans_text = resp.answer
                     sources_list = [s.model_dump() if hasattr(s, "model_dump") else dict(s) for s in resp.sources]

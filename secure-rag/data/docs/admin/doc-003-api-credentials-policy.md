@@ -2,6 +2,8 @@
 doc_id: doc-003
 title: API Credentials and Infrastructure Secrets Policy
 min_role: Administrator
+department: Cybersecurity
+classification: Restricted
 is_injection_fixture: false
 ---
 # API Credentials and Infrastructure Secrets Policy

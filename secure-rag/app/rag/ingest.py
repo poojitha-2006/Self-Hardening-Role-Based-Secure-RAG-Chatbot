@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 _DOCS_DIR = Path(__file__).parent.parent.parent / "data" / "docs"
 _CANARIES_FILE = Path(__file__).parent.parent.parent / "data" / "canaries.json"
+_CURATED_DOCS_FILE = (
+    Path(__file__).resolve().parents[3]
+    / "dataset_pipeline"
+    / "data"
+    / "curated"
+    / "documents.jsonl"
+)
 
 
 def _load_canary_registry() -> Dict[str, str]:
@@ -117,14 +125,33 @@ def parse_doc_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     return meta, body
 
 
-def ingest_documents(docs_dir: Path = None, force: bool = False, max_chunks_per_doc: int = 5) -> int:
-    """
-    Ingest all documents from docs_dir AND the curated GitLab Handbook dataset into ChromaDB.
-    Combines:
-      - 21 Fictional confidential & fixture documents (salary bands, budgets, canaries)
-      - ~182 Curated GitLab Handbook enterprise documents across HR, Finance, Engineering, Security
-    """
+def _classification_for_role(role: str) -> str:
+    return {
+        "Analyst": "Public",
+        "Manager": "Confidential",
+        "Administrator": "Restricted",
+    }.get(role, "Public")
+
+
+def _minimum_role_for_classification(classification: str) -> str:
+    return {
+        "Public": "Analyst",
+        "Internal": "Analyst",
+        "Confidential": "Manager",
+        "Restricted": "Administrator",
+    }.get(classification, "Administrator")
+
+
+def ingest_documents(
+    docs_dir: Path = None,
+    force: bool = False,
+    max_chunks_per_doc: int = 5,
+) -> int:
+    """Ingest local simulated policy fixtures and the curated public corpus."""
     docs_dir = docs_dir or _DOCS_DIR
+    if not _CURATED_DOCS_FILE.is_file():
+        raise FileNotFoundError(f"Curated corpus not found: {_CURATED_DOCS_FILE}")
+
     embedder = get_embedder()
     store = get_vector_store()
     canary_registry = _load_canary_registry()
@@ -132,44 +159,42 @@ def ingest_documents(docs_dir: Path = None, force: bool = False, max_chunks_per_
     if store.count > 300 and not force:
         logger.info("Vector store already has %d chunks; skipping ingest. Use force=True to re-ingest.", store.count)
         return store.count
+    if force:
+        store.delete_collection()
 
-    # 1. Collect confidential and fixture markdown documents
     doc_files = list(docs_dir.glob("**/*.md")) + list(docs_dir.glob("**/*.txt"))
-
-    # 2. Collect curated GitLab Handbook enterprise documents across core departments
-    processed_root = Path(__file__).resolve().parents[3] / "dataset_pipeline" / "data" / "processed"
-    if processed_root.is_dir():
-        for dept in ["people_hr", "finance", "engineering", "cybersecurity", "company", "operations_it", "product"]:
-            dept_dir = processed_root / dept
-            if dept_dir.is_dir():
-                doc_files.extend(list(dept_dir.glob("*.md")))
-
-    logger.info("Found %d total knowledge base document files", len(doc_files))
 
     all_ids: List[str] = []
     all_texts: List[str] = []
     all_metas: List[Dict[str, Any]] = []
+    document_counts: Counter = Counter()
+    chunk_counts: Counter = Counter()
+    ingested_documents: set[str] = set()
 
     for doc_path in sorted(doc_files):
         try:
             content = doc_path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
+        except OSError:
+            logger.exception("Could not read document: %s", doc_path)
+            raise
         meta, body = parse_doc_frontmatter(content)
 
         doc_id = meta.get("doc_id") or doc_path.stem
         title = meta.get("title") or doc_path.stem
         min_role = meta.get("min_role", "Analyst")
+        classification = meta.get("classification") or _classification_for_role(min_role)
+        department = meta.get("department", "")
         source = meta.get("source") or doc_path.parent.name
         is_injection_fixture = str(meta.get("is_injection_fixture", "false")).lower() == "true"
 
-        # Validate min_role
         if min_role not in settings.roles_hierarchy:
-            min_role = "Analyst"
+            min_role = _minimum_role_for_classification(classification)
 
         raw_chunks = chunk_text(body)
-        # For large GitLab docs take top substantive chunks; for fixture docs take all
-        chunks = raw_chunks if len(raw_chunks) <= max_chunks_per_doc or "data/docs" in str(doc_path).replace("\\", "/") else raw_chunks[:max_chunks_per_doc]
+        chunks = raw_chunks[:max_chunks_per_doc]
+        if chunks:
+            ingested_documents.add(doc_id)
+            document_counts[(department or "Unassigned", classification)] += 1
 
         for idx, chunk in enumerate(chunks):
             chunk_id = f"{doc_id}__chunk_{idx}"
@@ -178,6 +203,8 @@ def ingest_documents(docs_dir: Path = None, force: bool = False, max_chunks_per_
                 "title": title,
                 "source": source,
                 "min_role": min_role,
+                "department": department,
+                "classification": classification,
                 "chunk_index": idx,
                 "is_injection_fixture": is_injection_fixture,
             }
@@ -185,8 +212,52 @@ def ingest_documents(docs_dir: Path = None, force: bool = False, max_chunks_per_
             all_ids.append(chunk_id)
             all_texts.append(chunk)
             all_metas.append(chunk_meta)
+            chunk_counts[(department or "Unassigned", classification)] += 1
 
-    logger.info("Embedding %d total chunks across %d knowledge base documents...", len(all_texts), len(doc_files))
+    with _CURATED_DOCS_FILE.open(encoding="utf-8") as curated_file:
+        for line_number, line in enumerate(curated_file, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            source_meta = row.get("metadata", {})
+            doc_id = row.get("document_id") or source_meta.get("document_id")
+            body = row.get("text", "").strip()
+            if not doc_id or not body:
+                logger.warning("Skipping curated record at line %d without id or text", line_number)
+                continue
+
+            classification = source_meta.get("classification", "Public")
+            min_role = _minimum_role_for_classification(classification)
+            department = source_meta.get("department", "")
+            chunks = chunk_text(body)[:max_chunks_per_doc]
+            if chunks:
+                ingested_documents.add(doc_id)
+                document_counts[(department or "Unassigned", classification)] += 1
+
+            for idx, chunk in enumerate(chunks):
+                all_ids.append(f"{doc_id}__chunk_{idx}")
+                all_texts.append(chunk)
+                all_metas.append(
+                    {
+                        "doc_id": doc_id,
+                        "title": source_meta.get("title") or doc_id,
+                        "source": source_meta.get("source") or source_meta.get("source_organization", ""),
+                        "min_role": min_role,
+                        "department": department,
+                        "classification": classification,
+                        "chunk_index": idx,
+                        "is_injection_fixture": False,
+                    }
+                )
+                chunk_counts[(department or "Unassigned", classification)] += 1
+
+    logger.info(
+        "Embedding %d chunks from %d documents (local fixtures: %d; curated JSONL: %s)",
+        len(all_texts),
+        len(ingested_documents),
+        len(doc_files),
+        _CURATED_DOCS_FILE,
+    )
 
     # Batch embedding in chunks of 100 for safety and speed
     batch_size = 100
@@ -206,7 +277,33 @@ def ingest_documents(docs_dir: Path = None, force: bool = False, max_chunks_per_
         )
         logger.info("  Indexed chunks %d to %d / %d", i + 1, end, len(all_texts))
 
-    logger.info("Ingest complete: %d chunks indexed from %d documents into ChromaDB", len(all_ids), len(doc_files))
+    logger.info(
+        "Ingest complete: %d chunks indexed from %d documents into ChromaDB",
+        len(all_ids),
+        len(ingested_documents),
+    )
+    canaries_found = {
+        token: any(token in chunk for chunk in all_texts)
+        for token in canary_registry
+    }
+    summary = {
+        "curated_file": str(_CURATED_DOCS_FILE),
+        "documents": len(ingested_documents),
+        "chunks": len(all_ids),
+        "documents_by_department_classification": {
+            f"{department} / {classification}": count
+            for (department, classification), count in sorted(document_counts.items())
+        },
+        "chunks_by_department_classification": {
+            f"{department} / {classification}": count
+            for (department, classification), count in sorted(chunk_counts.items())
+        },
+        "canaries_registered": len(canary_registry),
+        "canaries_found_in_ingested_chunks": sum(canaries_found.values()),
+        "missing_canaries": [token for token, found in canaries_found.items() if not found],
+        "indexed_metadata_records": store.count,
+    }
+    logger.info("Ingestion summary: %s", json.dumps(summary, sort_keys=True))
     return len(all_ids)
 
 
@@ -215,4 +312,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
     force = "--force" in sys.argv
     n = ingest_documents(force=force)
-    print(f"\nIngested {n} chunks into ChromaDB")
+    print(f"\nIngested {n} chunks into ChromaDB from {_CURATED_DOCS_FILE}")

@@ -85,6 +85,7 @@ _PATTERNS: List[Tuple[re.Pattern, float, str]] = [
 
     # Data exfiltration
     (re.compile(r"(summarize|translate|encode|convert|write)\s+.{0,30}(canary|secret|password|credential|api\s+key|token)", re.I), 0.85, "data_exfiltration"),
+    (re.compile(r"(summarize|translate|encode|convert|quote|repeat|extract|reproduce)\s+.{0,40}(confidential|restricted|sensitive|internal\s+only)", re.I), 0.85, "restricted_data_exfiltration"),
     (re.compile(r"(base64|hex|rot13|caesar|unicode)\s+(encode|decode|the|this|following)", re.I), 0.7, "encoding_request"),
     (re.compile(r"(repeat|echo|copy|output|print)\s+(verbatim|exactly|word for word|as[- ]is)", re.I), 0.65, "verbatim_repeat"),
 

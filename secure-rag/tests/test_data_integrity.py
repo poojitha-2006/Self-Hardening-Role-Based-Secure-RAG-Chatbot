@@ -28,6 +28,19 @@ def test_config_yaml_structure() -> None:
     assert data["roles"]["hierarchy"] == ["Analyst", "Manager", "Administrator"]
 
 
+def test_yaml_settings_are_mapped_to_runtime_fields() -> None:
+    from app.config import _load_yaml
+
+    settings_from_yaml = _load_yaml()
+
+    assert settings_from_yaml["LLM_MODEL"] == "llama3.2:latest"
+    assert settings_from_yaml["EMBEDDING_MODEL"] == "all-MiniLM-L6-v2"
+    assert settings_from_yaml["GUARDRAIL_INPUT_BLOCK_THRESHOLD"] == 0.6
+    assert settings_from_yaml["CHROMA_PERSIST_DIRECTORY"].endswith(
+        "secure-rag\\data\\chroma_db"
+    )
+
+
 def test_env_example_safety() -> None:
     env_example = ROOT / ".env.example"
     assert env_example.is_file(), ".env.example must exist"

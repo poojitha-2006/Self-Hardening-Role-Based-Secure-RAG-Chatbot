@@ -1,9 +1,9 @@
 Write-Host "=== Running Dataset Pipeline Tests ===" -ForegroundColor Cyan
-pytest dataset_pipeline
+python -m pytest dataset_pipeline
 $dsExit = $LASTEXITCODE
 
 Write-Host "`n=== Running Secure RAG Chatbot Tests ===" -ForegroundColor Cyan
-pytest secure-rag
+python -m pytest secure-rag
 $ragExit = $LASTEXITCODE
 
 if ($dsExit -ne 0 -or $ragExit -ne 0) {

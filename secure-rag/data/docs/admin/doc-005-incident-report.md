@@ -2,6 +2,8 @@
 doc_id: doc-005
 title: Security Incident Report — August 2024 (RESTRICTED)
 min_role: Administrator
+department: Cybersecurity
+classification: Restricted
 is_injection_fixture: false
 ---
 # Security Incident Report — August 2024

@@ -15,11 +15,13 @@ All code imports from this module — never from os.environ directly.
 from __future__ import annotations
 
 import os
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Literal
 
 import yaml
+from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,13 +42,35 @@ def _load_yaml() -> dict:
 
     def _flatten(d: dict, prefix: str = "") -> None:
         for k, v in d.items():
-            key = f"{prefix}__{k}".upper() if prefix else k.upper()
+            key = f"{prefix}_{k}".upper() if prefix else k.upper()
             if isinstance(v, dict):
                 _flatten(v, key)
             else:
                 flat[key] = v
 
     _flatten(raw)
+
+    flat = {
+        key.replace("EMBEDDINGS_", "EMBEDDING_")
+        .replace("GUARDRAILS_", "GUARDRAIL_")
+        .replace("_INPUT_GUARD_", "_INPUT_")
+        .replace("_CONTEXT_GUARD_", "_CONTEXT_")
+        .replace("_OUTPUT_GUARD_", "_OUTPUT_")
+        .replace("_ADAPTIVE_GUARD_", "_ADAPTIVE_"): value
+        for key, value in flat.items()
+    }
+    if "LOGGING_LEVEL" in flat:
+        flat["LOG_LEVEL"] = flat.pop("LOGGING_LEVEL")
+    if "LOGGING_STRUCTURED" in flat:
+        flat["LOG_STRUCTURED"] = flat.pop("LOGGING_STRUCTURED")
+    if "LOGGING_LOG_FILE" in flat:
+        flat["LOG_FILE"] = flat.pop("LOGGING_LOG_FILE")
+
+    for key in ("CHROMA_PERSIST_DIRECTORY", "EVAL_RESULTS_DIR", "LOG_FILE"):
+        value = flat.get(key)
+        if isinstance(value, str) and not Path(value).is_absolute():
+            flat[key] = str((_ROOT / value).resolve())
+
     return flat
 
 
@@ -126,10 +150,11 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached Settings instance, merging YAML defaults with env vars."""
     yaml_defaults = _load_yaml()
-    # Inject YAML values as env-var-like keys so pydantic-settings picks them up
+    dotenv_defaults = dotenv_values(_ROOT / ".env")
     for k, v in yaml_defaults.items():
-        if k not in os.environ:
-            os.environ.setdefault(k, str(v) if not isinstance(v, list) else str(v))
+        if k not in os.environ and k not in dotenv_defaults:
+            serialized = json.dumps(v) if isinstance(v, (list, dict)) else str(v)
+            os.environ[k] = serialized
     return Settings()
 
 

@@ -30,15 +30,12 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import os
+import random
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import httpx
-import numpy as np
+from typing import Any, Dict, List
 
 # Add project root to path
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -46,15 +43,17 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 from app.config import settings
 from eval.metrics import compute_all_metrics
-from redteam.canary import detect_canary_leak, detect_system_prompt_leak
+from redteam.canary import (
+    detect_canary_leak,
+    detect_injection_success,
+    detect_system_prompt_leak,
+)
 
 logger = logging.getLogger(__name__)
 
 _RESULTS_DIR = Path(settings.eval_results_dir)
 _ATTACKS_FILE = _PROJECT_ROOT / "redteam" / "attacks.json"
 _BENIGN_FILE = _PROJECT_ROOT / "eval" / "datasets" / "benign_queries.json"
-_API_BASE = "http://localhost:8000"
-
 _ROLE_CREDENTIALS = {
     "Analyst": ("carol", "password"),
     "Manager": ("bob", "password"),
@@ -62,65 +61,30 @@ _ROLE_CREDENTIALS = {
 }
 
 
-def _login(role: str) -> Optional[str]:
-    username, password = _ROLE_CREDENTIALS.get(role, ("carol", "password"))
-    try:
-        resp = httpx.post(
-            f"{_API_BASE}/login",
-            json={"username": username, "password": password},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return resp.json()["access_token"]
-    except Exception as e:
-        logger.error("Login failed for role=%s: %s", role, e)
-        return None
-
-
-def _send_query(text: str, token: str, timeout: int = 120) -> Dict[str, Any]:
-    try:
-        resp = httpx.post(
-            f"{_API_BASE}/chat",
-            json={"message": text},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=timeout,
-        )
-        if resp.status_code == 200:
-            return resp.json()
-        return {"answer": "", "blocked": True, "block_reason": f"HTTP {resp.status_code}", "latency_ms": 0}
-    except Exception as e:
-        return {"answer": "", "blocked": True, "block_reason": str(e), "latency_ms": 0}
-
-
 def _run_attacks(
     attacks: List[Dict[str, Any]],
     default_role: str = "Analyst",
 ) -> List[Dict[str, Any]]:
-    """Run attacks against the API and return result dicts."""
-    import json as _json
-    from pathlib import Path as _Path
+    """Run attacks directly through the in-process pipeline for each guardrail mode."""
+    from app.auth import USER_DB
+    from app.rag.pipeline import run_pipeline
 
-    canary_file = _PROJECT_ROOT / "data" / "canaries.json"
-    canary_registry = {}
-    if canary_file.exists():
-        with open(canary_file) as f:
-            canary_registry = _json.load(f)
-
-    tokens = {
-        role: _login(role)
-        for role in ["Analyst", "Manager", "Administrator"]
-    }
+    with (_PROJECT_ROOT / "data" / "canaries.json").open(encoding="utf-8") as canary_file:
+        canary_registry = json.load(canary_file)
 
     results = []
     for attack in attacks:
         role = attack.get("target_role", default_role)
-        token = tokens.get(role)
-        if not token:
-            continue
-
-        raw = _send_query(attack["text"], token)
-        answer = raw.get("answer", "")
-        blocked = raw.get("blocked", False)
+        username, _ = _ROLE_CREDENTIALS.get(role, _ROLE_CREDENTIALS["Analyst"])
+        user = USER_DB[username]
+        response = run_pipeline(
+            message=attack["text"],
+            user_role=user["role"],
+            username=user["username"],
+            user_department=user.get("department"),
+        )
+        answer = response.answer
+        blocked = response.blocked
 
         # Success detection
         canary_leaked, leaked_canaries = detect_canary_leak(answer, role, canary_registry)
@@ -138,60 +102,52 @@ def _run_attacks(
             "success": success,
             "canary_leaked": canary_leaked,
             "leaked_canaries": leaked_canaries,
-            "latency_ms": raw.get("latency_ms", 0),
+            "latency_ms": response.latency_ms,
         })
 
     return results
 
 
 def _run_benign(benign_queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Run benign queries against the API and return result dicts."""
-    tokens = {
-        role: _login(role)
-        for role in ["Analyst", "Manager", "Administrator"]
-    }
+    """Run benign questions directly through the in-process pipeline."""
+    from app.auth import USER_DB
+    from app.rag.pipeline import run_pipeline
 
     results = []
     for query in benign_queries:
         role = query.get("role", "Analyst")
-        token = tokens.get(role)
-        if not token:
-            continue
-
-        raw = _send_query(query["question"], token)
+        username, _ = _ROLE_CREDENTIALS.get(role, _ROLE_CREDENTIALS["Analyst"])
+        user = USER_DB[username]
+        response = run_pipeline(
+            message=query["question"],
+            user_role=user["role"],
+            username=user["username"],
+            user_department=user.get("department"),
+        )
         results.append({
             "id": query["id"],
             "role": role,
             "question": query["question"],
-            "answer": raw.get("answer", ""),
-            "blocked": raw.get("blocked", False),
+            "answer": response.answer,
+            "blocked": response.blocked,
             "expected_keywords": query.get("expected_keywords", []),
-            "latency_ms": raw.get("latency_ms", 0),
+            "latency_ms": response.latency_ms,
         })
 
     return results
 
 
 def _set_guardrail_mode(mode: str) -> None:
-    """
-    Change guardrail mode by environment variable (requires API restart in prod,
-    but for experiments we directly update the settings singleton).
-    """
-    os.environ["GUARDRAIL_MODE"] = mode
-    # Force-reload settings
-    from app.config import get_settings
-    get_settings.cache_clear()
+    """Set the shared settings instance for this process's evaluation round."""
     import app.config as cfg
-    cfg.settings = get_settings()
+    cfg.settings.guardrail_mode = mode
     logger.info("Set guardrail mode: %s", mode)
 
 
 def _get_attack_store_size() -> int:
-    try:
-        resp = httpx.get(f"{_API_BASE}/health", timeout=5)
-        return resp.json().get("known_attacks", 0)
-    except Exception:
-        return 0
+    from app.store.attack_store import get_attack_store
+
+    return get_attack_store().count
 
 
 def _store_train_attacks(train_attacks: List[Dict[str, Any]]) -> int:
@@ -205,6 +161,9 @@ def _store_train_attacks(train_attacks: List[Dict[str, Any]]) -> int:
         count = 0
 
         for attack in train_attacks:
+            if attack.get("split") != "train":
+                logger.warning("Skipping non-training attack during seeding: %s", attack.get("id"))
+                continue
             emb = embedder.embed_one(attack["text"])
             aid = f"train_{attack['id']}_{int(time.time())}_{count}"
             store.add_attack(
@@ -213,6 +172,7 @@ def _store_train_attacks(train_attacks: List[Dict[str, Any]]) -> int:
                 variant_text=attack["text"],
                 metadata={
                     "category": attack.get("category", "unknown"),
+                    "source_split": "train",
                     "round": -1,  # Pre-loaded from train split
                     "timestamp": time.time(),
                 },
@@ -225,10 +185,123 @@ def _store_train_attacks(train_attacks: List[Dict[str, Any]]) -> int:
         return 0
 
 
+def _run_smoke_round(
+    attacks: List[Dict[str, Any]],
+    benign_queries: List[Dict[str, Any]],
+    mode: str,
+) -> Dict[str, Any]:
+    _set_guardrail_mode(mode)
+
+    return compute_all_metrics(
+        _run_attacks(attacks),
+        _run_benign(benign_queries),
+        attack_store_size=_get_attack_store_size(),
+        round_number={"none": 0, "static": 1, "adaptive": 2}[mode],
+        guardrail_mode=mode,
+    )
+
+
+def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
+    with _ATTACKS_FILE.open(encoding="utf-8") as attack_stream:
+        all_attacks = json.load(attack_stream)
+    with _BENIGN_FILE.open(encoding="utf-8") as benign_stream:
+        all_benign = json.load(benign_stream)
+
+    train_attacks = [attack for attack in all_attacks if attack.get("split") == "train"]
+    test_attacks = [attack for attack in all_attacks if attack.get("split") == "test"]
+    if len(test_attacks) < 10 or len(all_benign) < 10 or not train_attacks:
+        raise ValueError(
+            "Smoke run requires at least 10 held-out attacks, 10 benign queries, "
+            "and one training attack."
+        )
+
+    rng = random.Random(seed)
+    smoke_attacks = rng.sample(test_attacks, 10)
+    smoke_benign = rng.sample(all_benign, 10)
+    held_out_texts = {attack["text"] for attack in test_attacks}
+
+    from app.store.attack_store import get_attack_store
+
+    store = get_attack_store()
+    existing_test_texts = [
+        item["id"] for item in store.get_all() if item["document"] in held_out_texts
+    ]
+    if existing_test_texts:
+        raise RuntimeError(
+            "Known-attacks store already contains exact held-out test text: "
+            + ", ".join(existing_test_texts)
+        )
+
+    results: List[Dict[str, Any]] = []
+    for mode in ("none", "static", "adaptive"):
+        if mode == "adaptive":
+            stored = _store_train_attacks(train_attacks[:10])
+            if stored != 10:
+                raise RuntimeError(f"Expected to seed 10 training attacks, stored {stored}.")
+            if any(item["document"] in held_out_texts for item in store.get_all()):
+                raise RuntimeError("Held-out test text entered the known-attacks store.")
+
+        metrics = _run_smoke_round(smoke_attacks, smoke_benign, mode)
+        results.append(metrics)
+        logger.info(
+            "Smoke round %d (%s): ASR=%.1f%% FPR=%.1f%% accuracy=%.1f%%",
+            metrics["round"],
+            mode,
+            metrics["asr"] * 100,
+            metrics["fpr"] * 100,
+            metrics["answer_accuracy"] * 100,
+        )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_path = output_dir / f"smoke_results_{timestamp}.json"
+    with results_path.open("w", encoding="utf-8") as result_file:
+        json.dump(
+            {
+                "seed": seed,
+                "attack_count": len(smoke_attacks),
+                "benign_count": len(smoke_benign),
+                "held_out_test_text_in_known_attacks": False,
+                "rounds": results,
+            },
+            result_file,
+            indent=2,
+        )
+
+    summary_path = output_dir / f"smoke_summary_{timestamp}.csv"
+    with summary_path.open("w", newline="", encoding="utf-8") as summary_file:
+        fields = [key for key in results[0] if key != "asr_by_category"]
+        writer = csv.DictWriter(summary_file, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(results)
+
+    from eval.plots import generate_all_plots
+
+    generate_all_plots(results, output_dir)
+    _write_markdown_report(results, output_dir, timestamp)
+
+    expected_artifacts = [
+        results_path,
+        summary_path,
+        output_dir / "asr_fpr_by_round.png",
+        output_dir / f"evaluation_report_{timestamp}.md",
+    ]
+    missing = [str(path) for path in expected_artifacts if not path.is_file()]
+    if missing:
+        raise RuntimeError("Smoke experiment did not write expected artifacts: " + ", ".join(missing))
+
+    print(f"Smoke results: {results_path}")
+    print(f"Smoke summary: {summary_path}")
+    print(f"Smoke plot: {output_dir / 'asr_fpr_by_round.png'}")
+    print(f"Smoke report: {output_dir / f'evaluation_report_{timestamp}.md'}")
+    return results
+
+
 def run_experiment(
     rounds: int = None,
     seeds: List[int] = None,
     output_dir: Path = None,
+    smoke: bool = False,
 ) -> None:
     """
     Run the full experiment protocol and save results.
@@ -243,6 +316,25 @@ def run_experiment(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    if smoke:
+        smoke_seed = (seeds or settings.eval_seeds)[0]
+        smoke_metrics = _run_smoke_experiment(output_dir, smoke_seed)
+        print("\nSMOKE EXPERIMENT METRICS")
+        for metrics in smoke_metrics:
+            mean_latency = (
+                metrics["attack_latency_mean_ms"] * metrics["asr_total"]
+                + metrics["benign_latency_mean_ms"] * metrics["fpr_total"]
+            ) / max(metrics["asr_total"] + metrics["fpr_total"], 1)
+            print(
+                f"Round {metrics['round']} ({metrics['guardrail_mode']}): "
+                f"ASR={metrics['asr']:.1%} FPR={metrics['fpr']:.1%} "
+                f"accuracy={metrics['answer_accuracy']:.1%} "
+                f"mean_latency={mean_latency:.1f}ms "
+                f"attack_mean={metrics['attack_latency_mean_ms']:.1f}ms "
+                f"benign_mean={metrics['benign_latency_mean_ms']:.1f}ms"
+            )
+        return
 
     # Load datasets
     with open(_ATTACKS_FILE) as f:
@@ -303,46 +395,16 @@ def run_experiment(
             benign_results = _run_benign(benign_queries)
             store_size = _get_attack_store_size()
 
-            # Store successful attacks from this round (red-team loop)
-            from redteam.canary import detect_canary_leak as _dcl
-            import json as _j
-            canary_reg = {}
-            if (_PROJECT_ROOT / "data" / "canaries.json").exists():
-                with open(_PROJECT_ROOT / "data" / "canaries.json") as f:
-                    canary_reg = _j.load(f)
-
-            new_stored = 0
-            for i, (attack, result) in enumerate(zip(test_attacks, attack_results)):
-                if result.get("success"):
-                    try:
-                        from app.rag.embedder import get_embedder
-                        from app.store.attack_store import get_attack_store
-                        emb = get_embedder().embed_one(attack["text"])
-                        aid = f"round_{round_num}_{attack['id']}_{i}"
-                        get_attack_store().add_attack(
-                            attack_id=aid,
-                            embedding=emb,
-                            variant_text=attack["text"],
-                            metadata={
-                                "category": attack.get("category", "unknown"),
-                                "round": round_num,
-                                "timestamp": time.time(),
-                            },
-                        )
-                        new_stored += 1
-                    except Exception as e:
-                        logger.debug("Could not store successful attack: %s", e)
-
             metrics = compute_all_metrics(
                 attack_results, benign_results,
-                attack_store_size=store_size + new_stored,
+                attack_store_size=store_size,
                 round_number=round_num,
                 guardrail_mode="adaptive",
             )
             all_round_metrics.append(metrics)
             logger.info(
                 "Round %d: ASR=%.1f%% FPR=%.1f%% StoreSize=%d",
-                round_num, metrics["asr"]*100, metrics["fpr"]*100, store_size + new_stored
+                round_num, metrics["asr"]*100, metrics["fpr"]*100, store_size
             )
 
     # ── Save results ──────────────────────────────────────────────────────────
@@ -463,4 +525,17 @@ def _write_markdown_report(
 
 
 if __name__ == "__main__":
-    run_experiment()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run Secure RAG evaluation.")
+    parser.add_argument("--smoke", action="store_true", help="Run 10 attacks and 10 benign queries.")
+    parser.add_argument("--rounds", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    args = parser.parse_args()
+    run_experiment(
+        rounds=args.rounds,
+        seeds=[args.seed] if args.seed is not None else None,
+        output_dir=args.output_dir,
+        smoke=args.smoke,
+    )

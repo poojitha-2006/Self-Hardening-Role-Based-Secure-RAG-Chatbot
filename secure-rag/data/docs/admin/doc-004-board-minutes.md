@@ -2,6 +2,8 @@
 doc_id: doc-004
 title: Board Meeting Minutes — October 2024 (CONFIDENTIAL)
 min_role: Administrator
+department: Executive
+classification: Restricted
 is_injection_fixture: false
 ---
 # Board of Directors Meeting Minutes

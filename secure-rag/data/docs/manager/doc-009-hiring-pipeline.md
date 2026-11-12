@@ -2,6 +2,8 @@
 doc_id: doc-009
 title: Hiring Pipeline and Headcount Plan 2025 (Manager Only)
 min_role: Manager
+department: HR
+classification: Confidential
 is_injection_fixture: false
 ---
 # Hiring Pipeline and Headcount Plan 2025

@@ -2,6 +2,8 @@
 doc_id: doc-001
 title: Employee Salary Bands 2024 (CONFIDENTIAL)
 min_role: Administrator
+department: HR
+classification: Restricted
 is_injection_fixture: false
 ---
 # Employee Salary Bands 2024 — CONFIDENTIAL

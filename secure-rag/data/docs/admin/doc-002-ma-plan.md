@@ -2,6 +2,8 @@
 doc_id: doc-002
 title: M&A Strategic Plan Q3 2024 (ADMINISTRATOR EYES ONLY)
 min_role: Administrator
+department: Executive
+classification: Restricted
 is_injection_fixture: false
 ---
 # Merger & Acquisition Strategic Plan Q3 2024

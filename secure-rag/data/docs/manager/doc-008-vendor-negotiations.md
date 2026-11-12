@@ -2,6 +2,8 @@
 doc_id: doc-008
 title: Vendor Contract Negotiation Status (Manager Confidential)
 min_role: Manager
+department: Procurement/Operations
+classification: Confidential
 is_injection_fixture: false
 ---
 # Vendor Contract Negotiation Status — Q4 2024

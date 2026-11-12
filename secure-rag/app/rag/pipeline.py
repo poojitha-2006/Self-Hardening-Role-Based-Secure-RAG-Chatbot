@@ -61,6 +61,7 @@ def run_pipeline(
     user_role: str,
     username: str,
     session_id: Optional[str] = None,
+    user_department: Optional[str] = None,
 ) -> ChatResponse:
     """
     Execute the full RAG pipeline for a user query.
@@ -133,7 +134,12 @@ def run_pipeline(
 
     # ── Stage 2: RBAC-Enforced Retrieval ────────────────────────────────────
     try:
-        chunks = retrieve(query=message, user_role=user_role, n_results=5)
+        chunks = retrieve(
+            query=message,
+            user_role=user_role,
+            n_results=5,
+            user_department=user_department,
+        )
     except Exception as e:
         logger.error("Retrieval failed: %s", e)
         chunks = []

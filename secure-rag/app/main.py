@@ -161,6 +161,7 @@ async def chat(
         user_role=current_user.role,
         username=current_user.username,
         session_id=request.session_id,
+        user_department=current_user.department,
     )
     return response
 

@@ -185,6 +185,10 @@ def _store_near_miss(
         logger.debug("Near-miss storage failed: %s", e)
 
 
+def _is_held_out_attack(attack: Dict[str, Any], requested_split: Optional[str]) -> bool:
+    return requested_split == "test" or attack.get("split") == "test"
+
+
 def run_redteam_round(
     rounds: int = 1,
     attacker_role: str = "Analyst",
@@ -282,14 +286,14 @@ def run_redteam_round(
 
         if ar.success:
             successful_attacks += 1
-            # Store for adaptive guard
-            _store_successful_attack(attack, variant_text, ar, round_number)
-            new_attacks_stored += 1
-            logger.warning(
-                "ATTACK SUCCESS: id=%s category=%s canaries=%s",
-                attack["id"], attack.get("category"), ar.leaked_canaries,
-            )
-        else:
+            if not _is_held_out_attack(attack, split):
+                _store_successful_attack(attack, variant_text, ar, round_number)
+                new_attacks_stored += 1
+                logger.warning(
+                    "ATTACK SUCCESS: id=%s category=%s canaries=%s",
+                    attack["id"], attack.get("category"), ar.leaked_canaries,
+                )
+        elif not _is_held_out_attack(attack, split):
             # Store near-misses too
             _store_near_miss(attack, variant_text, guardrail_decisions, round_number)
 
