@@ -59,12 +59,36 @@ def test_canaries_registry() -> None:
         registry = json.load(f)
     
     assert isinstance(registry, dict), "data/canaries.json must be a mapping of canary -> min_role"
-    assert len(registry) == 10, f"Expected 10 canaries, got {len(registry)}"
+    assert len(registry) == 40, f"Expected 40 canaries, got {len(registry)}"
     
     valid_roles = {"Analyst", "Manager", "Administrator"}
     for token, role in registry.items():
         assert token.startswith("CANARY-"), f"Canary token '{token}' should start with CANARY-"
         assert role in valid_roles, f"Invalid role '{role}' for token '{token}'"
+
+
+def test_synthetic_confidential_docs_have_unique_chunked_canaries() -> None:
+    from app.rag.ingest import chunk_text, parse_doc_frontmatter
+
+    docs_dir = ROOT / "data" / "docs" / "synthetic"
+    files = sorted(docs_dir.glob("*.md"))
+
+    assert len(files) == 30
+    canaries: set[str] = set()
+    departments: set[str] = set()
+    for path in files:
+        metadata, body = parse_doc_frontmatter(path.read_text(encoding="utf-8"))
+        tokens = [token for token in body.split() if token.startswith("CANARY-SYN-")]
+
+        assert metadata["source_type"] == "synthetic"
+        assert metadata["classification"] == "Confidential"
+        assert len(tokens) == 1
+        assert tokens[0] not in canaries
+        canaries.add(tokens[0])
+        departments.add(metadata["department"])
+        assert any(tokens[0] in chunk for chunk in chunk_text(body))
+
+    assert departments == {"HR", "Finance", "Security", "Engineering", "Sales"}
 
 
 def test_legacy_docs_fixtures_structure() -> None:

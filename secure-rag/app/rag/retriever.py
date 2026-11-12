@@ -50,14 +50,24 @@ def _build_rbac_filter(
                 {"classification": {"$eq": "Public"}},
             ]
         }
+    department_filters = [
+        {"classification": {"$eq": "Public"}},
+        {"department": {"$eq": user_department}},
+    ]
+    if user_department == "Executive":
+        department_filters.append(
+            {
+                "$and": [
+                    {"classification": {"$eq": "Restricted"}},
+                    {"exec_readable": {"$eq": True}},
+                ]
+            }
+        )
     return {
         "$and": [
             role_filter,
             {
-                "$or": [
-                    {"classification": {"$eq": "Public"}},
-                    {"department": {"$eq": user_department}},
-                ]
+                "$or": department_filters
             },
         ]
     }
@@ -76,9 +86,13 @@ def _can_access_chunk(
     classification = metadata.get("classification", "Public")
     document_department = metadata.get("department", "")
     if classification != "Public":
-        return bool(document_department and user_department) and (
+        same_department = bool(document_department and user_department) and (
             user_department.casefold() == document_department.casefold()
         )
+        executive_access = (
+            user_department == "Executive" and metadata.get("exec_readable") is True
+        )
+        return same_department or executive_access
     return True
 
 

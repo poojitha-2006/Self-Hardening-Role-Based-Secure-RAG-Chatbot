@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.config import settings
+from app.rag.classification import classify_document
 from app.rag.embedder import get_embedder
 from app.store.vector_store import get_vector_store
 
@@ -169,6 +170,10 @@ def ingest_documents(
     all_metas: List[Dict[str, Any]] = []
     document_counts: Counter = Counter()
     chunk_counts: Counter = Counter()
+    documents_by_classification: Counter = Counter()
+    chunks_by_classification: Counter = Counter()
+    curated_documents_by_classification: Counter = Counter()
+    curated_chunks_by_classification: Counter = Counter()
     ingested_documents: set[str] = set()
 
     for doc_path in sorted(doc_files):
@@ -195,6 +200,7 @@ def ingest_documents(
         if chunks:
             ingested_documents.add(doc_id)
             document_counts[(department or "Unassigned", classification)] += 1
+            documents_by_classification[classification] += 1
 
         for idx, chunk in enumerate(chunks):
             chunk_id = f"{doc_id}__chunk_{idx}"
@@ -205,6 +211,8 @@ def ingest_documents(
                 "min_role": min_role,
                 "department": department,
                 "classification": classification,
+                "source_type": meta.get("source_type", ""),
+                "exec_readable": str(meta.get("exec_readable", "false")).lower() == "true",
                 "chunk_index": idx,
                 "is_injection_fixture": is_injection_fixture,
             }
@@ -213,6 +221,7 @@ def ingest_documents(
             all_texts.append(chunk)
             all_metas.append(chunk_meta)
             chunk_counts[(department or "Unassigned", classification)] += 1
+            chunks_by_classification[classification] += 1
 
     with _CURATED_DOCS_FILE.open(encoding="utf-8") as curated_file:
         for line_number, line in enumerate(curated_file, start=1):
@@ -226,13 +235,16 @@ def ingest_documents(
                 logger.warning("Skipping curated record at line %d without id or text", line_number)
                 continue
 
-            classification = source_meta.get("classification", "Public")
+            classification_data = classify_document(row)
+            classification = classification_data["classification"]
             min_role = _minimum_role_for_classification(classification)
-            department = source_meta.get("department", "")
+            department = classification_data["owner_department"]
             chunks = chunk_text(body)[:max_chunks_per_doc]
             if chunks:
                 ingested_documents.add(doc_id)
                 document_counts[(department or "Unassigned", classification)] += 1
+                documents_by_classification[classification] += 1
+                curated_documents_by_classification[classification] += 1
 
             for idx, chunk in enumerate(chunks):
                 all_ids.append(f"{doc_id}__chunk_{idx}")
@@ -245,11 +257,15 @@ def ingest_documents(
                         "min_role": min_role,
                         "department": department,
                         "classification": classification,
+                        "source_type": source_meta.get("source_type", "curated"),
+                        "exec_readable": classification_data["exec_readable"],
                         "chunk_index": idx,
                         "is_injection_fixture": False,
                     }
                 )
                 chunk_counts[(department or "Unassigned", classification)] += 1
+                chunks_by_classification[classification] += 1
+                curated_chunks_by_classification[classification] += 1
 
     logger.info(
         "Embedding %d chunks from %d documents (local fixtures: %d; curated JSONL: %s)",
@@ -286,10 +302,30 @@ def ingest_documents(
         token: any(token in chunk for chunk in all_texts)
         for token in canary_registry
     }
+    canaries_by_department_classification: Counter = Counter()
+    for token, found in canaries_found.items():
+        if not found:
+            continue
+        matching_metadata = next(
+            meta for chunk, meta in zip(all_texts, all_metas) if token in chunk
+        )
+        canaries_by_department_classification[
+            (matching_metadata.get("department") or "Unassigned", matching_metadata.get("classification", "Unknown"))
+        ] += 1
+    missing_canaries = [token for token, found in canaries_found.items() if not found]
+    if missing_canaries:
+        raise RuntimeError(
+            "Canary tokens are missing from ingested chunks: "
+            + ", ".join(missing_canaries)
+        )
     summary = {
         "curated_file": str(_CURATED_DOCS_FILE),
         "documents": len(ingested_documents),
         "chunks": len(all_ids),
+        "documents_by_classification": dict(sorted(documents_by_classification.items())),
+        "chunks_by_classification": dict(sorted(chunks_by_classification.items())),
+        "curated_documents_by_classification": dict(sorted(curated_documents_by_classification.items())),
+        "curated_chunks_by_classification": dict(sorted(curated_chunks_by_classification.items())),
         "documents_by_department_classification": {
             f"{department} / {classification}": count
             for (department, classification), count in sorted(document_counts.items())
@@ -298,9 +334,13 @@ def ingest_documents(
             f"{department} / {classification}": count
             for (department, classification), count in sorted(chunk_counts.items())
         },
+        "canaries_by_department_classification": {
+            f"{department} / {classification}": count
+            for (department, classification), count in sorted(canaries_by_department_classification.items())
+        },
         "canaries_registered": len(canary_registry),
         "canaries_found_in_ingested_chunks": sum(canaries_found.values()),
-        "missing_canaries": [token for token, found in canaries_found.items() if not found],
+        "missing_canaries": missing_canaries,
         "indexed_metadata_records": store.count,
     }
     logger.info("Ingestion summary: %s", json.dumps(summary, sort_keys=True))

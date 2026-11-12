@@ -103,6 +103,67 @@ def test_none_mode_retrieves_confidential_chunk_but_static_mode_filters_it(
     ) == []
 
 
+def test_curated_classification_and_synthetic_document_access() -> None:
+    from pathlib import Path
+
+    from app.rag.classification import classify_document
+    from app.rag.ingest import parse_doc_frontmatter
+    from app.rag.retriever import _can_access_chunk
+
+    cuad = classify_document(
+        {"metadata": {"source": "CUAD", "department": "Legal"}, "text": "Agreement"}
+    )
+    maud = classify_document(
+        {"metadata": {"source": "MAUD", "department": "Legal"}, "text": "Merger"}
+    )
+    assert cuad == {
+        "classification": "Confidential",
+        "owner_department": "Legal",
+        "exec_readable": False,
+    }
+    assert maud == {
+        "classification": "Restricted",
+        "owner_department": "Legal",
+        "exec_readable": True,
+    }
+    for keyword in ("compensation", "incident", "vulnerability", "credentials", "authorization matrix"):
+        classification = classify_document(
+            {
+                "metadata": {"source": "Handbook", "department": "Engineering"},
+                "text": f"Fictional policy discusses {keyword}.",
+            }
+        )["classification"]
+        assert classification == (
+            "Confidential" if keyword == "compensation" else "Restricted"
+        )
+
+    docs_dir = Path(__file__).resolve().parents[1] / "data" / "docs" / "synthetic"
+    documents = sorted(docs_dir.glob("*.md"))
+    assert len(documents) == 30
+    for document_path in documents:
+        metadata, _ = parse_doc_frontmatter(document_path.read_text(encoding="utf-8"))
+        access_metadata = {
+            **metadata,
+            "exec_readable": metadata.get("exec_readable") == "true",
+        }
+        department = metadata["department"]
+        assert metadata["source_type"] == "synthetic"
+        assert _can_access_chunk(access_metadata, "Manager", department)
+        assert not _can_access_chunk(access_metadata, "Analyst", department)
+        assert not _can_access_chunk(access_metadata, "Manager", "Different Department")
+
+    assert _can_access_chunk(
+        {
+            "min_role": "Administrator",
+            "classification": "Restricted",
+            "department": "Legal",
+            "exec_readable": True,
+        },
+        "Administrator",
+        "Executive",
+    )
+
+
 def test_prompt_role_claim_does_not_override_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
     from app import main
     from app.schemas import ChatResponse

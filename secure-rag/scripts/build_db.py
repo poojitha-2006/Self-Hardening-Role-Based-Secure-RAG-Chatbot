@@ -7,8 +7,7 @@ Initializes the SQLite database (db/rag_access.db) with:
   3. 4 classifications (Public 0, Internal 1, Confidential 2, Restricted 3).
   4. 48 roles and 48 employees reconciled from dataset_pipeline/data/employees.json.
   5. 386 curated documents from dataset_pipeline/data/curated/documents.jsonl,
-     classified according to simulated enterprise policy rules targeting
-     roughly ~15% Public, ~40% Internal, ~30% Confidential, ~15% Restricted.
+     classified using source ownership and document-sensitivity rules.
   6. Demonstration grants (ALLOW and DENY) to verify policy overrides.
 """
 
@@ -22,6 +21,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+from app.rag.classification import classify_document as classify_curated_document
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = ROOT.parent
@@ -202,62 +203,12 @@ def classify_document(doc: Dict[str, Any]) -> Tuple[int, int]:
     """
     Classify document into (classification_level, exec_readable).
     Levels: 0=Public, 1=Internal, 2=Confidential, 3=Restricted.
-    Target distribution: ~15% Public, ~40% Internal, ~30% Confidential, ~15% Restricted.
     """
-    meta = doc.get("metadata", {})
-    source = meta.get("source", "")
-    dept = meta.get("department", "")
-    title = meta.get("title", "").lower()
-    text = doc.get("text", "")[:4000].lower()
-
-    # Rule 1: MAUD dataset agreements are Restricted and Executive readable
-    if source == "MAUD":
-        return 3, 1
-
-    # Rule 2: CUAD dataset contracts are Confidential
-    if source == "CUAD":
-        return 2, 0
-
-    # 1. Restricted (Level 3): Target ~50-58 docs (30 MAUD + crown-jewel assets)
-    r_keywords = [
-        "vulnerabilit", "incident", "credential", "api key", "secret",
-        "ciso", "board", "acquisition", "critical risk", "penetration",
-        "crown jewel", "compensation committee", "access token", "authorization",
-        "zero-day", "exploit", "breach", "kill switch", "abuse", "investigation",
-        "audit committee", "executive strategy", "merger"
+    result = classify_curated_document(doc)
+    level = {"Public": 0, "Internal": 1, "Confidential": 2, "Restricted": 3}[
+        result["classification"]
     ]
-    if (any(k in title for k in r_keywords) or any(k in text[:600] for k in ["critical incident", "root credential", "severity 1"])) and (dept in ["Cybersecurity/IT", "Executive", "Legal", "Finance", "Engineering", "HR/People"]):
-        if dept in ["Executive", "Legal", "Finance"]:
-            return 3, 1
-        return 3, 0
-
-    # 2. Confidential (Level 2): Target ~110-125 docs (50 CUAD + departmental sensitive)
-    c_keywords = [
-        "compensation", "salary", "payroll", "equity", "performance", "bonus",
-        "financial", "budget", "pricing", "vendor", "headcount", "investor",
-        "roadmap", "threat", "compliance", "audit", "tax", "quota", "pipeline",
-        "retention", "severance", "employee", "copilot", "vision and strategy",
-        "competitor", "dispute", "contract", "customer data", "infrastructure",
-        "architecture", "procurement", "nda", "risk"
-    ]
-    if any(k in title for k in c_keywords) or (dept in ["Finance", "Legal"]) or (dept in ["AI/Data", "Product", "Engineering", "HR/People", "Sales", "Procurement/Operations"] and any(k in text[:600] for k in ["internal only", "confidential", "proprietary", "target", "review"])):
-        return 2, 0
-
-    # 3. Public (Level 0): Target ~60-70 docs (~16-18%)
-    p_keywords = [
-        "handbook", "guide", "open source", "values", "communication",
-        "code of conduct", "accessibility", "diversity", "about", "welcome", "public",
-        "overview", "style guide", "release post", "blog", "community", "faq",
-        "tier", "markdown", "training awareness", "onboarding"
-    ]
-    if (any(k in title for k in p_keywords) or dept in ["Marketing", "Customer Support"]) and "internal" not in title and "confidential" not in title and dept not in ["Cybersecurity/IT", "Finance"]:
-        return 0, 0
-
-    # 4. Default: Internal (Level 1)
-    return 1, 0
-
-    # Default: Internal (1)
-    return 1, 0
+    return level, int(result["exec_readable"])
 
 
 def build_database() -> None:
@@ -319,7 +270,8 @@ def build_database() -> None:
         source = meta.get("source", "Unknown")
         url = meta.get("source_url")
         license_info = meta.get("license_or_usage")
-        dept_name = meta.get("department", "Engineering")
+        classification_data = classify_curated_document(doc)
+        dept_name = classification_data["owner_department"]
         dept_id = DEPT_NAME_TO_ID.get(dept_name, 3) # default Engineering
         content_hash = meta.get("content_hash", "")
 
@@ -365,7 +317,7 @@ def build_database() -> None:
     print(f"Documents: {doc_count}")
     print(f"Grants: {grant_count}")
     print(f"v_access user-document pairs: {v_access_count}")
-    print("\nActual Document Classification Distribution (SIMULATED over REAL public documents):")
+    print("\nSimulated Document Classification Distribution:")
     total_docs = len(doc_rows)
     for lvl, name, desc in CLASSIFICATIONS:
         count = dist[lvl]
