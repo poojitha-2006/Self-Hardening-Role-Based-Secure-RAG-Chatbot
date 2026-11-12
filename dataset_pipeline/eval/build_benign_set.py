@@ -91,12 +91,22 @@ def split_chunks(text: str) -> list[tuple[int, int, str]]:
     return chunks
 
 
+def simulated_access_metadata(document: dict[str, Any]) -> dict[str, Any]:
+    secure_rag_root = ROOT.parent / "secure-rag"
+    if str(secure_rag_root) not in sys.path:
+        sys.path.insert(0, str(secure_rag_root))
+    from app.rag.classification import classify_document
+
+    return classify_document(document)
+
+
 def candidate_chunks(documents: list[dict[str, Any]], seed: int) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for document in documents:
-        metadata = document.get("metadata", {})
-        if metadata.get("classification") not in {"Public", "Internal"}:
-            continue
+        metadata = dict(document.get("metadata", {}))
+        access_metadata = simulated_access_metadata(document)
+        metadata["classification"] = access_metadata["classification"]
+        metadata["department"] = metadata.get("department") or access_metadata["owner_department"]
         text = document.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
@@ -237,10 +247,29 @@ def build_overblocking(chunks: list[dict[str, Any]], limit: int = OVERBLOCKING_T
                 "doc_id": chunk["document_id"],
                 "chunk_ref": {"chunk_index": chunk["chunk_index"], "start_char": chunk["start_char"], "end_char": chunk["end_char"]},
                 "topic": chunk["topic"], "classification": chunk["metadata"].get("classification"),
+                "department": chunk["metadata"].get("department", chunk["topic"]),
                 "case_type": "over_blocking_test", "should_be_refused": False,
             })
             used.add(key)
             break
+    return rows
+
+
+def build_should_be_refused(authorized_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for source_row in authorized_rows:
+        if source_row.get("classification") == "Public":
+            continue
+        department = str(source_row.get("department") or source_row.get("topic") or "")
+        unauthorized_department = "Operations" if department.casefold() == "analytics" else "Analytics"
+        rows.append({
+            **source_row,
+            "id": f"unauthorized-{len(rows) + 1:04d}",
+            "case_type": "unauthorized_access_probe",
+            "should_be_refused": True,
+            "source_question_id": source_row["id"],
+            "unauthorized_department": unauthorized_department,
+        })
     return rows
 
 
@@ -272,6 +301,8 @@ def build_unauthorized_probes(classification_map_path: Path | None, limit: int =
                        "query": row["probe_question"], "answer_span": row["answer_span"],
                        "expected_keywords": row.get("expected_keywords", []),
                        "doc_id": row.get("document_id"), "classification": row.get("classification"),
+                       "department": row.get("department", row.get("topic")),
+                       "unauthorized_department": "Analytics",
                        "title": title, "case_type": "unauthorized_access_probe", "should_be_refused": True})
     note = None if result else "Mapping has no higher-classification rows with a grounded probe_question and literal answer_span."
     return result, note
@@ -311,10 +342,18 @@ def build(corpus_path: Path = CORPUS_DEFAULT, output_path: Path = OUTPUT_DEFAULT
         source = document["text"][ref["start_char"]:ref["end_char"]]
         if row.get("answer_span") not in source or any(keyword not in source for keyword in row.get("expected_keywords", [])):
             continue
-        accepted.append(row)
+        access_metadata = simulated_access_metadata(document)
+        metadata = document.get("metadata", {})
+        accepted.append({
+            **row,
+            "classification": access_metadata["classification"],
+            "department": metadata.get("department") or access_metadata["owner_department"],
+            "should_be_refused": False,
+        })
         completed_chunks.add((str(row["doc_id"]), int(ref.get("chunk_index", 0))))
     overblocking = build_overblocking(chunks)
-    unauthorized, unauthorized_note = build_unauthorized_probes(classification_map_path)
+    mapped_unauthorized, unauthorized_note = build_unauthorized_probes(classification_map_path)
+    unauthorized = build_should_be_refused(accepted + overblocking) + mapped_unauthorized
     write_jsonl(output_path, accepted + overblocking + unauthorized)
     actual_model = resolve_ollama_model(session, endpoint, model)
     rejected = Counter()
@@ -352,6 +391,7 @@ def build(corpus_path: Path = CORPUS_DEFAULT, output_path: Path = OUTPUT_DEFAULT
                 "doc_id": chunk["document_id"],
                 "chunk_ref": {"chunk_index": chunk["chunk_index"], "start_char": chunk["start_char"], "end_char": chunk["end_char"]},
                 "topic": chunk["topic"], "classification": chunk["metadata"].get("classification"),
+                "department": chunk["metadata"].get("department", chunk["topic"]),
                 "source_url": chunk["metadata"].get("source_url"),
                 "case_type": "benign_qa", "should_be_refused": False,
             })

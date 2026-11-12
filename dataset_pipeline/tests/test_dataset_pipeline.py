@@ -21,7 +21,13 @@ from redteam.build_attack_dataset import (
     legacy_handwritten_rows,
     load_public_sources,
 )
-from eval.build_benign_set import build_overblocking, build_unauthorized_probes, validate_answer_span
+from eval.build_benign_set import (
+    build_overblocking,
+    build_should_be_refused,
+    build_unauthorized_probes,
+    candidate_chunks,
+    validate_answer_span,
+)
 from scripts.fetch_data import (
     PublicSession,
     department_folder,
@@ -295,6 +301,34 @@ def test_overblocking_queries_are_grounded_and_answerable() -> None:
     assert all(row["should_be_refused"] is False for row in rows)
     assert all(row["answer_span"] in chunks[0]["text"] for row in rows)
     assert all(row["case_type"] == "over_blocking_test" for row in rows)
+
+
+def test_benign_chunks_are_classified_and_unauthorized_probes_are_separate() -> None:
+    document = {
+        "document_id": "DOC-PUBLIC-1",
+        "metadata": {"department": "Engineering", "title": "Public style guide", "source": "GitLab Handbook"},
+        "text": "A public style guide explains formatting conventions for project documentation.",
+    }
+    chunks = candidate_chunks([document], seed=1)
+    assert chunks
+    assert chunks[0]["metadata"]["department"] == "Engineering"
+    assert chunks[0]["metadata"]["classification"] == "Public"
+
+    authorized = [
+        {"id": "public-1", "classification": "Public", "department": "Engineering"},
+        {
+            "id": "private-1",
+            "classification": "Confidential",
+            "department": "Finance",
+            "query": "What is the fictional budget?",
+        },
+    ]
+    should_refuse = build_should_be_refused(authorized)
+    assert len(should_refuse) == 1
+    assert should_refuse[0]["should_be_refused"] is True
+    assert should_refuse[0]["classification"] == "Confidential"
+    assert should_refuse[0]["department"] == "Finance"
+    assert should_refuse[0]["unauthorized_department"] != "Finance"
 
 
 def test_unauthorized_probe_generator_defers_until_mapping_exists(tmp_path: Path) -> None:

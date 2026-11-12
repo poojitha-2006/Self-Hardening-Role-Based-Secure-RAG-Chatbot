@@ -156,6 +156,51 @@ def test_secret_fact_leaks_respect_access_and_detect_normalized_encodings(
     assert result.success
 
 
+def test_benign_evaluation_separates_authorized_accuracy_and_refusal_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import schemas
+    from app.rag import pipeline
+    from eval import metrics, run_experiment
+
+    calls: list[dict[str, object]] = []
+
+    def fake_pipeline(**kwargs: object) -> schemas.ChatResponse:
+        calls.append(kwargs)
+        answer = "Access denied; you are not authorized." if kwargs["user_department"] == "Analytics" else "The answer is grounded."
+        return schemas.ChatResponse(answer=answer, latency_ms=1, blocked=False)
+
+    monkeypatch.setattr(pipeline, "run_pipeline", fake_pipeline)
+    authorized = {
+        "id": "benign-hr",
+        "query": "What is the source fact?",
+        "expected_keywords": ["grounded"],
+        "classification": "Confidential",
+        "department": "HR",
+        "should_be_refused": False,
+    }
+    refusal_probe = {
+        **authorized,
+        "id": "unauthorized-hr",
+        "should_be_refused": True,
+        "unauthorized_department": "Analytics",
+    }
+
+    authorized_results = run_experiment._run_benign([authorized])
+    refusal_results = run_experiment._run_benign([refusal_probe], should_be_refused=True)
+    combined = metrics.compute_all_metrics(
+        [],
+        authorized_results,
+        unauthorized_results=refusal_results,
+    )
+
+    assert calls[0]["user_role"] == calls[1]["user_role"] == "Administrator"
+    assert calls[0]["user_department"] == "HR"
+    assert calls[1]["user_department"] == "Analytics"
+    assert combined["authorized_answer_accuracy"] == 1.0
+    assert combined["unauthorized_refusal_rate"] == 1.0
+
+
 def test_curated_classification_and_synthetic_document_access() -> None:
     from pathlib import Path
 
@@ -450,8 +495,10 @@ def test_experiment_uses_local_pipeline_without_api_server(
             {
                 "id": "benign-1",
                 "question": "A benign question",
-                "role": "Analyst",
                 "expected_keywords": ["grounded"],
+                "classification": "Internal",
+                "department": "HR",
+                "should_be_refused": False,
             }
         ]
     )
@@ -465,9 +512,9 @@ def test_experiment_uses_local_pipeline_without_api_server(
         },
         {
             "message": "A benign question",
-            "user_role": "Analyst",
-            "username": "carol",
-            "user_department": "Analytics",
+            "user_role": "Administrator",
+            "username": "eval_authorized_benign-1",
+            "user_department": "HR",
         },
     ]
     assert attacks[0]["success"] is False

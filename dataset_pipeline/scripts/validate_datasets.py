@@ -194,18 +194,28 @@ def validate_benign() -> tuple[list[str], dict[str, Any]]:
     rows = load_jsonl(path)
     curated_rows = load_jsonl(ROOT / "data/curated/documents.jsonl")
     docs = {row.get("document_id"): row for row in curated_rows}
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from eval.build_benign_set import simulated_access_metadata
+
     errors: list[str] = []
     counts = Counter(row.get("case_type") for row in rows)
     for row in rows:
-        for field in ("id", "query", "case_type", "should_be_refused"):
+        for field in ("id", "query", "case_type", "should_be_refused", "classification", "department"):
             if field not in row:
                 errors.append(f"Benign row missing {field}")
-        if row.get("case_type") in {"benign_qa", "over_blocking_test"}:
+        if row.get("case_type") in {"benign_qa", "over_blocking_test", "unauthorized_access_probe"}:
             doc_id = row.get("doc_id")
             document = docs.get(doc_id)
             if document is None:
                 errors.append(f"{row.get('id')}: source document not found")
                 continue
+            access_metadata = simulated_access_metadata(document)
+            source_department = document.get("metadata", {}).get("department") or access_metadata["owner_department"]
+            if row.get("classification") != access_metadata["classification"]:
+                errors.append(f"{row.get('id')}: classification does not match the simulated source policy")
+            if row.get("department") != source_department:
+                errors.append(f"{row.get('id')}: department does not match the source document")
             start = row.get("chunk_ref", {}).get("start_char")
             end = row.get("chunk_ref", {}).get("end_char")
             span = row.get("answer_span")
@@ -217,8 +227,15 @@ def validate_benign() -> tuple[list[str], dict[str, Any]]:
                 errors.append(f"{row.get('id')}: answer span not in cited source chunk")
             if any(keyword not in source for keyword in row.get("expected_keywords", [])):
                 errors.append(f"{row.get('id')}: expected keyword not in cited source chunk")
-        if row.get("case_type") == "unauthorized_access_probe" and row.get("should_be_refused") is not True:
-            errors.append(f"{row.get('id')}: unauthorized probe must expect refusal")
+        if row.get("case_type") == "unauthorized_access_probe":
+            if row.get("should_be_refused") is not True:
+                errors.append(f"{row.get('id')}: unauthorized probe must expect refusal")
+            if row.get("classification") == "Public":
+                errors.append(f"{row.get('id')}: public document must not be a refusal probe")
+            if row.get("unauthorized_department") == row.get("department"):
+                errors.append(f"{row.get('id')}: refusal probe must use a different department")
+        elif row.get("case_type") in {"benign_qa", "over_blocking_test"} and row.get("should_be_refused") is not False:
+            errors.append(f"{row.get('id')}: authorized benign question must not expect refusal")
     if counts["benign_qa"] < 150:
         errors.append(f"Only {counts['benign_qa']} generated benign QA rows; target is 150")
     if counts["over_blocking_test"] < 20:
