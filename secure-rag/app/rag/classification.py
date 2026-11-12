@@ -5,69 +5,102 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-_RESTRICTED_KEYWORDS = (
-    "vulnerabilit",
-    "incident",
-    "credential",
-    "authorization matrix",
-)
-_CONFIDENTIAL_KEYWORDS = ("compensation", "salary", "payroll")
-_RESTRICTED_TITLE_KEYWORDS = (
-    "api key",
-    "secret",
-    "ciso",
-    "board",
-    "acquisition",
-    "critical risk",
-    "penetration",
-    "crown jewel",
-    "compensation committee",
-    "access token",
-    "authorization",
-    "zero-day",
-    "exploit",
-    "breach",
-    "kill switch",
-    "abuse",
-    "investigation",
-    "audit committee",
-    "executive strategy",
-    "merger",
-)
-_CONFIDENTIAL_TITLE_KEYWORDS = (
-    "equity",
-    "performance",
-    "bonus",
-    "financial",
-    "budget",
-    "pricing",
-    "vendor",
-    "headcount",
-    "investor",
-    "roadmap",
-    "threat",
-    "compliance",
-    "audit",
-    "tax",
-    "quota",
-    "pipeline",
-    "retention",
-    "severance",
-    "employee",
-    "copilot",
-    "vision and strategy",
-    "competitor",
-    "dispute",
-    "contract",
-    "customer data",
-    "infrastructure",
-    "architecture",
-    "procurement",
-    "nda",
-    "risk",
-)
+_RESTRICTED_CUES_BY_DEPARTMENT = {
+    "Cybersecurity/IT": (
+        "zero-day", "cve-", "exploit", "penetration test", "security incident",
+        "incident response", "ransomware", "credential leak", "api key",
+        "access token", "private key", "security breach", "contingency plan",
+        "severity matrix",
+    ),
+    "Engineering": (
+        "zero-day", "cve-", "exploit", "security incident", "incident response",
+        "credential leak", "api key", "access token", "private key",
+    ),
+    "Finance": (
+        "authorization matrix", "wire transfer", "bank account", "payment approval",
+        "audit committee",
+    ),
+    "Legal": (
+        "privileged and confidential", "legal hold", "board minutes",
+        "audit committee", "merger agreement", "acquisition agreement",
+    ),
+    "Executive": (
+        "board minutes", "executive strategy", "audit committee",
+        "merger agreement", "acquisition agreement",
+    ),
+    "HR/People": (
+        "employee investigation", "medical record", "compensation committee",
+        "payroll record",
+    ),
+}
+_CONFIDENTIAL_TITLE_CUES_BY_DEPARTMENT = {
+    "HR/People": (
+        "compensation", "salary", "payroll", "performance review", "bonus", "severance", "equity"
+    ),
+    "Finance": (
+        "budget", "financial forecast", "pricing", "tax strategy", "investor", "vendor contract"
+    ),
+    "Legal": (
+        "nda", "confidential contract", "vendor contract", "dispute", "acquisition", "merger"
+    ),
+    "Executive": (
+        "executive strategy", "board package", "acquisition", "merger", "investor",
+        "vision and strategy",
+    ),
+    "Sales": (
+        "quota", "pipeline", "pricing", "competitor", "customer data", "retention"
+    ),
+    "Product": ("roadmap", "pricing", "competitor", "customer data"),
+    "AI/Data": ("roadmap", "model weights", "training data", "data access"),
+    "Cybersecurity/IT": (
+        "threat assessment", "security plan", "credential rotation"
+    ),
+    "Engineering": (
+        "roadmap", "architecture decision", "private infrastructure", "source code"
+    ),
+    "Marketing": ("campaign budget", "pricing", "competitor", "pipeline"),
+    "Customer Support": ("customer data", "support case", "retention"),
+    "Procurement/Operations": (
+        "vendor contract", "supplier negotiation", "procurement pricing"
+    ),
+}
+_CONFIDENTIAL_TEXT_CUES_BY_DEPARTMENT = {
+    "HR/People": (
+        "compensation", "salary", "payroll", "performance rating", "bonus", "severance"
+    ),
+    "Finance": (
+        "budget", "forecast", "pricing", "tax", "investor", "payroll", "compensation", "salary"
+    ),
+    "Legal": (
+        "non-disclosure agreement", "commercial terms", "legal strategy", "dispute settlement"
+    ),
+    "Executive": (
+        "executive strategy", "board package", "acquisition target", "merger terms"
+    ),
+    "Sales": (
+        "sales pipeline", "quota attainment", "pricing", "competitor analysis", "customer data"
+    ),
+    "Product": ("product roadmap", "pricing", "competitor analysis", "customer data"),
+    "AI/Data": (
+        "training data", "model weights", "restricted data access", "data access"
+    ),
+    "Cybersecurity/IT": (
+        "threat assessment", "credential rotation", "security posture", "vulnerability management"
+    ),
+    "Engineering": (
+        "internal architecture", "private infrastructure", "production credentials", "source code"
+    ),
+    "Marketing": (
+        "campaign budget", "pricing", "competitor analysis", "sales pipeline"
+    ),
+    "Customer Support": (
+        "customer data", "support case history", "customer retention"
+    ),
+    "Procurement/Operations": (
+        "vendor contract", "supplier negotiation", "procurement pricing"
+    ),
+}
 _PUBLIC_TITLE_KEYWORDS = (
-    "handbook",
     "guide",
     "open source",
     "values",
@@ -112,41 +145,24 @@ def classify_document(document: Dict[str, Any]) -> Dict[str, Any]:
             "owner_department": "Legal",
             "exec_readable": True,
         }
-    if any(keyword in searchable_text for keyword in _RESTRICTED_KEYWORDS) or (
-        any(keyword in title for keyword in _RESTRICTED_TITLE_KEYWORDS)
-        and department
-        in {
-            "Cybersecurity/IT",
-            "Executive",
-            "Legal",
-            "Finance",
-            "Engineering",
-            "HR/People",
+    if source in {"cisa", "nist"}:
+        return {
+            "classification": "Public",
+            "owner_department": department or "Cybersecurity/IT",
+            "exec_readable": False,
         }
-    ):
+
+    restricted_cues = _RESTRICTED_CUES_BY_DEPARTMENT.get(department, ())
+    if any(cue in searchable_text for cue in restricted_cues):
         return {
             "classification": "Restricted",
             "owner_department": department or "Engineering",
             "exec_readable": department in {"Executive", "Finance", "Legal"},
         }
-    if any(keyword in searchable_text for keyword in _CONFIDENTIAL_KEYWORDS) or (
-        any(keyword in title for keyword in _CONFIDENTIAL_TITLE_KEYWORDS)
-        or department in {"Finance", "Legal"}
-        or (
-            department
-            in {
-                "AI/Data",
-                "Product",
-                "Engineering",
-                "HR/People",
-                "Sales",
-                "Procurement/Operations",
-            }
-            and any(
-                keyword in text[:600]
-                for keyword in ("internal only", "confidential", "proprietary", "target", "review")
-            )
-        )
+    confidential_title_cues = _CONFIDENTIAL_TITLE_CUES_BY_DEPARTMENT.get(department, ())
+    confidential_text_cues = _CONFIDENTIAL_TEXT_CUES_BY_DEPARTMENT.get(department, ())
+    if any(cue in title for cue in confidential_title_cues) or any(
+        cue in searchable_text for cue in confidential_text_cues
     ):
         return {
             "classification": "Confidential",

@@ -224,16 +224,45 @@ def test_curated_classification_and_synthetic_document_access() -> None:
         "owner_department": "Legal",
         "exec_readable": True,
     }
-    for keyword in ("compensation", "incident", "vulnerability", "credentials", "authorization matrix"):
+    for keyword in ("incident", "vulnerability", "credentials"):
         classification = classify_document(
             {
-                "metadata": {"source": "Handbook", "department": "Engineering"},
-                "text": f"Fictional policy discusses {keyword}.",
+                "metadata": {
+                    "source": "Handbook",
+                    "department": "HR/People",
+                    "title": "HR Handbook",
+                },
+                "text": f"Fictional handbook policy discusses {keyword}.",
             }
         )["classification"]
-        assert classification == (
-            "Confidential" if keyword == "compensation" else "Restricted"
-        )
+        assert classification == "Internal"
+
+    assert classify_document(
+        {
+            "metadata": {
+                "source": "Handbook",
+                "department": "HR/People",
+                "title": "HR Handbook",
+            },
+            "text": "The compensation review includes fictional salary details.",
+        }
+    )["classification"] == "Confidential"
+    assert classify_document(
+        {
+            "metadata": {
+                "source": "Handbook",
+                "department": "Cybersecurity/IT",
+                "title": "Security incident response playbook",
+            },
+            "text": "The response protects a fictional API key.",
+        }
+    )["classification"] == "Restricted"
+    assert classify_document(
+        {
+            "metadata": {"source": "Handbook", "department": "Finance"},
+            "text": "The authorization matrix lists payment approvers.",
+        }
+    )["classification"] == "Restricted"
 
     docs_dir = Path(__file__).resolve().parents[1] / "data" / "docs" / "synthetic"
     documents = sorted(docs_dir.glob("*.md"))
