@@ -105,6 +105,8 @@ class Settings(BaseSettings):
     chunking_chunk_size: int = 400
     chunking_chunk_overlap: int = 80
 
+    retrieval_n_results: int = 10
+
     # ── Auth ───────────────────────────────────────────────────────────────
     auth_secret_key: str = "CHANGE_ME_IN_PRODUCTION"
     auth_algorithm: str = "HS256"

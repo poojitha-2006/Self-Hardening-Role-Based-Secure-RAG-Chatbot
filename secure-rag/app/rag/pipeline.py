@@ -137,7 +137,7 @@ def run_pipeline(
         chunks = retrieve(
             query=message,
             user_role=user_role,
-            n_results=5,
+            n_results=settings.retrieval_n_results,
             user_department=user_department,
             enforce_access=settings.guardrail_mode != "none",
         )

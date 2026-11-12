@@ -32,6 +32,10 @@ chunking:
   chunk_overlap: 80
   separators: ["\n\n", "\n", ". ", " "]
 
+# --- Retrieval Settings ---
+retrieval:
+  n_results: 10
+
 # --- Auth Settings ---
 auth:
   secret_key: "CHANGE_ME_IN_PRODUCTION_USE_LONG_RANDOM_STRING"

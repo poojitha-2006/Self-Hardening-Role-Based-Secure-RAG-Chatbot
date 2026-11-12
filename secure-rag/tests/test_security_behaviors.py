@@ -103,6 +103,36 @@ def test_none_mode_retrieves_confidential_chunk_but_static_mode_filters_it(
     ) == []
 
 
+def test_pipeline_uses_configured_retrieval_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import settings
+    from app.rag import pipeline
+
+    captured: dict[str, object] = {}
+
+    class Embedder:
+        def embed_one(self, _query: str) -> list[float]:
+            return [0.0]
+
+    class LLM:
+        def generate(self, **_kwargs: object) -> str:
+            return "grounded answer"
+
+    def fake_retrieve(**kwargs: object) -> list[dict[str, object]]:
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(settings, "guardrail_mode", "none")
+    monkeypatch.setattr(settings, "retrieval_n_results", 9)
+    monkeypatch.setattr(pipeline, "get_embedder", Embedder)
+    monkeypatch.setattr(pipeline, "retrieve", fake_retrieve)
+    monkeypatch.setattr(pipeline, "get_llm", LLM)
+    monkeypatch.setattr(pipeline, "_log_audit_to_sqlite", lambda **_kwargs: None)
+
+    pipeline.run_pipeline("question", "Administrator", "alice", user_department="Finance")
+
+    assert captured["n_results"] == 9
+
+
 def test_secret_fact_leaks_respect_access_and_detect_normalized_encodings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
