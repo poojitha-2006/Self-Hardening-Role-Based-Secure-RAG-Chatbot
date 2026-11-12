@@ -80,15 +80,7 @@ def chunk_text(
 
 def parse_doc_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     """
-    Parse YAML-like frontmatter from document files.
-    Format:
-      ---
-      title: My Doc
-      min_role: Analyst
-      doc_id: doc-001
-      is_injection_fixture: false
-      ---
-      Body text here...
+    Parse YAML frontmatter (---) or JSON comment metadata (<!-- metadata: {...} -->).
     """
     meta: Dict[str, Any] = {}
     body = content
@@ -102,50 +94,82 @@ def parse_doc_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
                 if ":" in line:
                     k, _, v = line.partition(":")
                     meta[k.strip()] = v.strip()
+    elif content.startswith("<!-- metadata:"):
+        first_line, _, rest = content.partition("\n")
+        json_str = first_line.replace("<!-- metadata:", "").replace("-->", "").strip()
+        try:
+            m = json.loads(json_str)
+            meta["doc_id"] = m.get("document_id", "")
+            meta["title"] = m.get("title", "")
+            meta["department"] = m.get("department", "")
+            meta["source"] = m.get("source", "GitLab Handbook")
+            classification = m.get("classification", "Public")
+            if classification == "Restricted":
+                meta["min_role"] = "Administrator"
+            elif classification == "Confidential":
+                meta["min_role"] = "Manager"
+            else:
+                meta["min_role"] = "Analyst"
+        except Exception:
+            pass
+        body = rest.strip()
 
     return meta, body
 
 
-def ingest_documents(docs_dir: Path = None, force: bool = False) -> int:
+def ingest_documents(docs_dir: Path = None, force: bool = False, max_chunks_per_doc: int = 5) -> int:
     """
-    Ingest all documents from docs_dir into the vector store.
-
-    Returns number of chunks ingested.
+    Ingest all documents from docs_dir AND the curated GitLab Handbook dataset into ChromaDB.
+    Combines:
+      - 21 Fictional confidential & fixture documents (salary bands, budgets, canaries)
+      - ~182 Curated GitLab Handbook enterprise documents across HR, Finance, Engineering, Security
     """
     docs_dir = docs_dir or _DOCS_DIR
     embedder = get_embedder()
     store = get_vector_store()
     canary_registry = _load_canary_registry()
 
-    if store.count > 0 and not force:
+    if store.count > 300 and not force:
         logger.info("Vector store already has %d chunks; skipping ingest. Use force=True to re-ingest.", store.count)
         return store.count
 
+    # 1. Collect confidential and fixture markdown documents
     doc_files = list(docs_dir.glob("**/*.md")) + list(docs_dir.glob("**/*.txt"))
-    logger.info("Found %d document files in %s", len(doc_files), docs_dir)
+
+    # 2. Collect curated GitLab Handbook enterprise documents across core departments
+    processed_root = Path(__file__).resolve().parents[3] / "dataset_pipeline" / "data" / "processed"
+    if processed_root.is_dir():
+        for dept in ["people_hr", "finance", "engineering", "cybersecurity", "company", "operations_it", "product"]:
+            dept_dir = processed_root / dept
+            if dept_dir.is_dir():
+                doc_files.extend(list(dept_dir.glob("*.md")))
+
+    logger.info("Found %d total knowledge base document files", len(doc_files))
 
     all_ids: List[str] = []
-    all_embeddings: List[List[float]] = []
     all_texts: List[str] = []
     all_metas: List[Dict[str, Any]] = []
 
     for doc_path in sorted(doc_files):
-        content = doc_path.read_text(encoding="utf-8")
+        try:
+            content = doc_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
         meta, body = parse_doc_frontmatter(content)
 
-        doc_id = meta.get("doc_id", doc_path.stem)
-        title = meta.get("title", doc_path.stem)
+        doc_id = meta.get("doc_id") or doc_path.stem
+        title = meta.get("title") or doc_path.stem
         min_role = meta.get("min_role", "Analyst")
-        source = str(doc_path.relative_to(docs_dir.parent.parent))
-        is_injection_fixture = meta.get("is_injection_fixture", "false").lower() == "true"
+        source = meta.get("source") or doc_path.parent.name
+        is_injection_fixture = str(meta.get("is_injection_fixture", "false")).lower() == "true"
 
         # Validate min_role
         if min_role not in settings.roles_hierarchy:
-            logger.warning("Unknown min_role '%s' in %s — defaulting to Analyst", min_role, doc_path.name)
             min_role = "Analyst"
 
-        chunks = chunk_text(body)
-        logger.info("  %s: %d chunks, min_role=%s", doc_path.name, len(chunks), min_role)
+        raw_chunks = chunk_text(body)
+        # For large GitLab docs take top substantive chunks; for fixture docs take all
+        chunks = raw_chunks if len(raw_chunks) <= max_chunks_per_doc or "data/docs" in str(doc_path).replace("\\", "/") else raw_chunks[:max_chunks_per_doc]
 
         for idx, chunk in enumerate(chunks):
             chunk_id = f"{doc_id}__chunk_{idx}"
@@ -162,19 +186,27 @@ def ingest_documents(docs_dir: Path = None, force: bool = False) -> int:
             all_texts.append(chunk)
             all_metas.append(chunk_meta)
 
-    # Batch embed
-    logger.info("Embedding %d chunks...", len(all_texts))
-    all_embeddings = embedder.embed(all_texts)
+    logger.info("Embedding %d total chunks across %d knowledge base documents...", len(all_texts), len(doc_files))
 
-    # Upsert to store
-    store.add_chunks(
-        ids=all_ids,
-        embeddings=all_embeddings,
-        documents=all_texts,
-        metadatas=all_metas,
-    )
+    # Batch embedding in chunks of 100 for safety and speed
+    batch_size = 100
+    for i in range(0, len(all_texts), batch_size):
+        end = min(i + batch_size, len(all_texts))
+        batch_ids = all_ids[i:end]
+        batch_texts = all_texts[i:end]
+        batch_metas = all_metas[i:end]
 
-    logger.info("Ingest complete: %d chunks from %d documents", len(all_ids), len(doc_files))
+        batch_embeddings = embedder.embed(batch_texts)
+
+        store.add_chunks(
+            ids=batch_ids,
+            embeddings=batch_embeddings,
+            documents=batch_texts,
+            metadatas=batch_metas,
+        )
+        logger.info("  Indexed chunks %d to %d / %d", i + 1, end, len(all_texts))
+
+    logger.info("Ingest complete: %d chunks indexed from %d documents into ChromaDB", len(all_ids), len(doc_files))
     return len(all_ids)
 
 

@@ -58,8 +58,34 @@ def _build_context_string(chunks: List[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _synthesize_offline_answer(question: str, context_chunks: List[dict]) -> str:
+    """Offline deterministic synthesizer used when Ollama daemon is not running."""
+    if not context_chunks:
+        return "I don't have information about that in the available documents for your role permissions."
+    
+    snippets = []
+    titles = []
+    for chunk in context_chunks:
+        meta = chunk.get("metadata", {})
+        title = meta.get("title") or meta.get("doc_id", "Handbook")
+        if title not in titles:
+            titles.append(title)
+        text = chunk.get("document", "").strip()
+        lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#") and not line.startswith("---") and not line.startswith("title:")]
+        for line in lines:
+            if len(line) > 30 and line not in snippets:
+                snippets.append(line)
+                if len(snippets) >= 4:
+                    break
+        if len(snippets) >= 4:
+            break
+
+    body = "\n\n".join(snippets[:3]) if snippets else "Please refer to the authorized source documents listed below."
+    return f"{body}"
+
+
 class OllamaLLM:
-    """Thin wrapper around the Ollama Python client."""
+    """Thin wrapper around the Ollama Python client with offline graceful degradation."""
 
     def __init__(self) -> None:
         import ollama
@@ -67,11 +93,6 @@ class OllamaLLM:
         self._model = settings.llm_model
         logger.info("OllamaLLM using model: %s", self._model)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
     def generate(
         self,
         user_question: str,
@@ -80,48 +101,48 @@ class OllamaLLM:
     ) -> str:
         """
         Generate a response using the retrieved context.
-
-        Args:
-            user_question: The user's original question.
-            context_chunks: Raw chunk dicts from retriever.
-            system_prompt: Override default system prompt (for testing).
-
-        Returns:
-            LLM response string.
+        Falls back gracefully to extractive synthesis if Ollama daemon is offline.
         """
-        context_str = _build_context_string(context_chunks)
-        prompt = _CONTEXT_TEMPLATE.format(
-            context=context_str,
-            question=user_question,
-        )
+        try:
+            context_str = _build_context_string(context_chunks)
+            prompt = _CONTEXT_TEMPLATE.format(
+                context=context_str,
+                question=user_question,
+            )
 
-        response = self._client.chat(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt or _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            options={
-                "temperature": settings.llm_temperature,
-                "num_predict": settings.llm_max_tokens,
-                "seed": 42,  # Deterministic outputs for evaluation
-            },
-        )
-        answer: str = response["message"]["content"]
-        logger.debug("LLM generated %d chars", len(answer))
-        return answer
+            response = self._client.chat(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": system_prompt or _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                options={
+                    "temperature": settings.llm_temperature,
+                    "num_predict": settings.llm_max_tokens,
+                    "seed": 42,
+                },
+            )
+            answer: str = response["message"]["content"]
+            logger.debug("LLM generated %d chars", len(answer))
+            return answer
+        except Exception as e:
+            logger.warning("Ollama server not reachable (%s); using offline grounded synthesizer.", e)
+            return _synthesize_offline_answer(user_question, context_chunks)
 
     def classify(self, prompt: str) -> str:
         """
         Simple classification call (used by adaptive guard).
-        Returns raw model output — caller is responsible for parsing.
+        Returns raw model output or empty string if offline.
         """
-        response = self._client.chat(
-            model=self._model,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.0, "num_predict": 50, "seed": 42},
-        )
-        return response["message"]["content"].strip()
+        try:
+            response = self._client.chat(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+                options={"temperature": 0.0, "num_predict": 50, "seed": 42},
+            )
+            return response["message"]["content"].strip()
+        except Exception:
+            return ""
 
 
 # Module-level singleton

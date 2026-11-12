@@ -1,22 +1,25 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 
 # Caching & environments
 .pytest_cache/
 .venv/
+**/.venv/
 env/
 venv/
 ENV/
 
 # Sensitive files
 .env
+**/.env
 *.pem
 *.key
 
 # Large raw & intermediate datasets (read-only raw and processed remain local)
-dataset_pipeline/data/raw/
+**/data/raw/
 dataset_pipeline/data/processed/
 
 # Database & vector store runtime files (prevent OneDrive locking)
@@ -24,8 +27,7 @@ dataset_pipeline/data/processed/
 *.db-journal
 *.db-wal
 *.db-shm
-secure-rag/data/chroma_db/
-data/chroma_db/
+**/chroma_db/
 
 # Evaluation outputs
 eval/results/

@@ -125,12 +125,19 @@ async def login(request: LoginRequest) -> LoginResponse:
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = create_access_token(username=user["username"], role=user["role"])
+    token = create_access_token(
+        username=user["username"],
+        role=user["role"],
+        department=user.get("department", ""),
+        display_role=user.get("display_role", user["role"]),
+    )
     logger.info("Login: user=%s role=%s", user["username"], user["role"])
     return LoginResponse(
         access_token=token,
         role=user["role"],
         username=user["username"],
+        department=user.get("department", ""),
+        display_role=user.get("display_role", user["role"]),
     )
 
 

@@ -24,11 +24,15 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     role: str
     username: str
+    department: Optional[str] = ""
+    display_role: Optional[str] = ""
 
 
 class TokenData(BaseModel):
     username: str
     role: str
+    department: Optional[str] = ""
+    display_role: Optional[str] = ""
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────

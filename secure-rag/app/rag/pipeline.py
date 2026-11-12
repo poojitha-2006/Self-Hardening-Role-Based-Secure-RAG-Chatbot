@@ -106,6 +106,7 @@ def run_pipeline(
                 start_time=start_time,
                 username=username,
                 message=message,
+                user_role=user_role,
             )
 
     # ── Stage 1: Input Guard (static rules) ──────────────────────────────────
@@ -127,6 +128,7 @@ def run_pipeline(
                 start_time=start_time,
                 username=username,
                 message=message,
+                user_role=user_role,
             )
 
     # ── Stage 2: RBAC-Enforced Retrieval ────────────────────────────────────
@@ -149,6 +151,16 @@ def run_pipeline(
                     score=1.0 if context_result.quarantined_chunks else 0.6,
                     reason="; ".join(context_result.reasons) if context_result.reasons else "Context clean",
                     triggered_rules=["context_injection_quarantine"] if context_result.quarantined_chunks else [],
+                )
+            )
+        else:
+            guardrail_decisions.append(
+                _make_guard_decision(
+                    layer="context",
+                    allowed=True,
+                    score=0.0,
+                    reason="Context clean",
+                    triggered_rules=[],
                 )
             )
     else:
@@ -192,6 +204,11 @@ def run_pipeline(
 
     latency_ms = (time.perf_counter() - start_time) * 1000
 
+    decision_str = "block" if output_blocked else "allow"
+    all_triggers = []
+    for gd in guardrail_decisions:
+        all_triggers.extend(gd.triggered_rules)
+
     if output_blocked:
         _stats["blocked_queries"] += 1
         _stats["recent_blocks"].append({
@@ -201,6 +218,17 @@ def run_pipeline(
             "timestamp": time.time(),
         })
         _stats["recent_blocks"] = _stats["recent_blocks"][-50:]  # Keep last 50
+
+    _log_audit_to_sqlite(
+        username=username,
+        user_role=user_role,
+        message=message,
+        allowed_doc_count=len(safe_chunks),
+        retrieved_chunk_count=len(chunks),
+        decision=decision_str,
+        triggers=all_triggers,
+        blocked_reason="; ".join(output_result.reasons) if output_blocked else None,
+    )
 
     logger.info(
         "Pipeline complete: user=%s role=%s latency=%.0fms blocked=%s",
@@ -217,12 +245,52 @@ def run_pipeline(
     )
 
 
+def _log_audit_to_sqlite(
+    username: str,
+    user_role: str,
+    message: str,
+    allowed_doc_count: int,
+    retrieved_chunk_count: int,
+    decision: str,
+    triggers: List[str],
+    blocked_reason: Optional[str] = None,
+) -> None:
+    """Persist query audit record into SQLite rag_access.db audit_log table."""
+    try:
+        import sqlite3
+        db_path = Path(__file__).resolve().parents[2] / "db" / "rag_access.db"
+        if not db_path.exists():
+            return
+        conn = sqlite3.connect(str(db_path), timeout=3)
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        with conn:
+            conn.execute(
+                """INSERT INTO audit_log
+                   (timestamp, username, role_id, query_text, allowed_doc_count, retrieved_chunk_count, decision, guardrail_triggers, blocked_reason)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    now_str,
+                    username,
+                    user_role,
+                    message[:500],
+                    allowed_doc_count,
+                    retrieved_chunk_count,
+                    decision,
+                    ", ".join(triggers) if triggers else "none",
+                    blocked_reason or "",
+                ),
+            )
+    except Exception as e:
+        logger.debug("Failed writing to SQLite audit_log: %s", e)
+
+
 def _blocked_response(
     reason: str,
     guardrail_decisions: List[GuardrailDecision],
     start_time: float,
     username: str,
     message: str,
+    user_role: str = "Analyst",
 ) -> ChatResponse:
     """Return a standardised block response."""
     _stats["blocked_queries"] += 1
@@ -233,6 +301,21 @@ def _blocked_response(
         "timestamp": time.time(),
     })
     _stats["recent_blocks"] = _stats["recent_blocks"][-50:]
+
+    all_triggers = []
+    for gd in guardrail_decisions:
+        all_triggers.extend(gd.triggered_rules)
+
+    _log_audit_to_sqlite(
+        username=username,
+        user_role=user_role,
+        message=message,
+        allowed_doc_count=0,
+        retrieved_chunk_count=0,
+        decision="block",
+        triggers=all_triggers,
+        blocked_reason=reason,
+    )
 
     latency_ms = (time.perf_counter() - start_time) * 1000
     return ChatResponse(

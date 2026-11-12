@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Secure RAG & Enterprise Dataset Platform
 
 A unified, production-grade repository combining:
@@ -224,10 +223,28 @@ cd secure-rag
    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-3. **Start the Streamlit UI (Optional):**
+3. **Start the Streamlit UI:**
    ```powershell
    streamlit run app/ui.py
+   # Or from the project root:
+   streamlit run app.py
    ```
+
+   **Three UI Screens:**
+   - **Screen 1: Login & Role Switcher (Sidebar)**
+     - Authenticates via JWT and PBKDF2 hashing.
+     - Role comes strictly from server-side token claims, never from user prompt.
+     - 5 seeded demo users with role/dept badges: `priya.hr` (HR Mgr · HR), `alex.emp` (Employee · Engineering), `sarah.sec` (Security Admin · Cybersecurity), `marcus.fin` (Finance Mgr · Finance), `david.exec` (Executive · Executive).
+     - "Switch user" dropdown allows instant role-switching for viva demonstrations.
+   - **Screen 2: Chat Page**
+     - Full chat history with cited markdown source badges.
+     - Verdict line per turn: `✔ Input ✔ Context ✔ Output 312 ms` (Allowed) or `✖ Blocked by Input guard (risk 0.91)` (Blocked).
+     - Admin-only "Show retrieved chunks" debug expander (hidden for non-administrators).
+   - **Screen 3: Security Dashboard (Admin Only)**
+     - Live KPI cards: Known Attacks (87), Blocked Today (14), False Positives (3%), Avg Latency (~312 ms).
+     - Matplotlib Attack Success Rate (ASR) by round showing steep decline across self-hardening rounds (R0 -> R3).
+     - Interactive `[Run red-team round]` button with live progress bar.
+     - Recent blocked attempts table from SQLite `audit_log` and Attack Store browser.
 
 4. **Execute Red-Team Attack Campaign:**
    Launches 65 adversarial attacks against the running chatbot server:
@@ -240,11 +257,3 @@ cd secure-rag
    ```powershell
    python eval/run_experiment.py
    ```
-=======
-# Self-Hardening-Role-Based-Secure-RAG-Chatbot
-Large Language Model (LLM)-based Retrieval-Augmented Generation (RAG) systems are increasingly being used to provide conversational access to organizational knowledge. However, deploying such systems in enterprise environments introduces significant security challenges, particularly unauthorized information access, prompt injection, indirect prompt injection, and attempts to bypass role-based access restrictions. Conventional RAG security approaches generally rely on static filters and manually defined rules, which may become ineffective when attackers use new or modified attack patterns. This project proposes a Self-Hardening Secure RAG Chatbot that combines role-based document access control with an adaptive security mechanism driven by automated red teaming.
-The proposed system provides employees with a conversational interface for querying internal organizational documents while restricting information according to their assigned roles, such as Administrator, Manager, or Analyst. Documents are converted into embeddings and stored in a vector database along with role-based metadata. During retrieval, only documents authorized for the authenticated user's role are considered. The retrieved content is then passed through security checks before being provided to a locally hosted Large Language Model. Additional input and output guardrails are employed to identify malicious prompts, unauthorized information requests, prompt injection attempts, and potentially leaked restricted content.
-The key contribution of the project is an automated self-hardening feedback loop. A custom red-team engine generates and executes adversarial queries against the chatbot, including predefined attacks and automatically generated or paraphrased variations. Each attack is evaluated using a canary-based success detection mechanism to determine whether the system produced an unauthorized or security-sensitive response. Successful attacks are automatically recorded in a dedicated known-attack vector store. In subsequent testing rounds, the adaptive guardrail uses this accumulated knowledge to recognize similar attack patterns and strengthen its detection process without requiring a developer to manually rewrite security rules after every attack cycle.
-The complete system is implemented using freely available technologies, including Python, FastAPI, ChromaDB, locally hosted embedding models, Ollama-based open-source LLMs, and Streamlit. The system is evaluated through multiple automated red-team rounds using consistent attack datasets and metrics such as attack success rate, false-positive rate, response latency, and authorized-answer accuracy. The primary objective is to demonstrate a measurable reduction in successful attacks as the system progresses through successive red-team and adaptation cycles.
-The project aims to demonstrate that combining RAG, role-based access control, multi-layer guardrails, and automated adversarial testing can provide a more adaptive security architecture than a conventional static RAG chatbot. The final outcome will be a functional role-restricted enterprise chatbot accompanied by an automated red-team framework and experimental analysis showing how the system's security posture changes over successive attack rounds. Rather than claiming absolute security, the project focuses on demonstrating measurable, reproducible improvement against a defined set of adversarial attacks and identifying the limitations and attack categories that remain difficult to mitigate.
->>>>>>> 3a4a653437c91f1fdbd0303bd870aad328532811
