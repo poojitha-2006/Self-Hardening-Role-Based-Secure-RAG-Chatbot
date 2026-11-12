@@ -162,6 +162,8 @@ _REFUSAL_PHRASES = (
     "cannot provide",
     "can't provide",
     "access denied",
+    "don't have information",
+    "do not have information",
 )
 
 

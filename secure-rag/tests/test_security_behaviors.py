@@ -246,6 +246,14 @@ def test_benign_evaluation_separates_authorized_accuracy_and_refusal_rate(
     assert combined["unauthorized_refusal_rate"] == 1.0
 
 
+def test_refusal_detector_recognizes_no_information_response() -> None:
+    from eval.run_experiment import _is_refusal, _matched_refusal_phrase
+
+    answer = "I don't have information about that in the available documents."
+    assert _matched_refusal_phrase(answer) == "don't have information"
+    assert _is_refusal(answer, blocked=False)
+
+
 def test_curated_classification_and_synthetic_document_access() -> None:
     from pathlib import Path
 
