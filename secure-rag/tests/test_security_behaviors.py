@@ -276,6 +276,50 @@ def test_benign_evaluation_separates_authorized_accuracy_and_refusal_rate(
     assert combined["unauthorized_refusal_rate"] == 1.0
 
 
+def test_authorized_answer_score_rejects_keyword_overlap_and_refusals() -> None:
+    from eval.metrics import compute_answer_accuracy, score_authorized_answer
+
+    hiring_keywords = ["Only", "Planned", "Backfill", "positions", "included", "Hiring", "Plan"]
+    wrong_hiring_answer = (
+        "The positions included in the Hiring Plan are QA Engineer, "
+        "Account Executive, and Sales Engineer."
+    )
+    matched, coverage, correct = score_authorized_answer(
+        wrong_hiring_answer,
+        hiring_keywords,
+    )
+    assert matched == ["positions", "included", "Hiring", "Plan"]
+    assert coverage == pytest.approx(4 / 7)
+    assert not correct
+
+    refusal_with_keyword_overlap = (
+        "I don't have information about scaling based on monitored metrics "
+        "or when scaling actions trigger."
+    )
+    assert not score_authorized_answer(
+        refusal_with_keyword_overlap,
+        ["Scaling", "Based", "monitored", "metrics", "trigger", "scaling"],
+    )[2]
+
+    grounded_paraphrase = (
+        "Asynchronous metric recording runs in background jobs to avoid "
+        "blocking the request path."
+    )
+    assert score_authorized_answer(
+        grounded_paraphrase,
+        ["Write", "path", "Asynchronous", "metric", "recording", "background", "jobs", "avoid"],
+    )[2]
+
+    accuracy = compute_answer_accuracy([
+        {"answer": wrong_hiring_answer, "expected_keywords": hiring_keywords},
+        {"answer": refusal_with_keyword_overlap, "expected_keywords": ["Scaling", "Based", "monitored", "metrics", "trigger", "scaling"]},
+        {"answer": grounded_paraphrase, "expected_keywords": ["Write", "path", "Asynchronous", "metric", "recording", "background", "jobs", "avoid"]},
+    ])
+    assert accuracy["accuracy"] == pytest.approx(0.3333)
+    assert accuracy["correct"] == 1
+    assert accuracy["total"] == 3
+
+
 def test_refusal_detector_recognizes_no_information_response() -> None:
     from eval.run_experiment import _is_refusal, _matched_refusal_phrase
 
