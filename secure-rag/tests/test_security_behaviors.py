@@ -167,12 +167,49 @@ def test_benign_evaluation_separates_authorized_accuracy_and_refusal_rate(
 
     def fake_pipeline(**kwargs: object) -> schemas.ChatResponse:
         calls.append(kwargs)
-        answer = "Access denied; you are not authorized." if kwargs["user_department"] == "Analytics" else "The answer is grounded."
-        return schemas.ChatResponse(answer=answer, latency_ms=1, blocked=False)
+        unauthorized = kwargs["user_department"] == "Analytics"
+        answer = (
+            "Access denied; you are not authorized."
+            if unauthorized
+            else "The answer is grounded."
+        )
+        return schemas.ChatResponse(
+            answer=answer,
+            latency_ms=1,
+            blocked=unauthorized,
+            sources=(
+                []
+                if unauthorized
+                else [
+                    schemas.SourceChunk(
+                        doc_id="hr-source",
+                        title="HR source",
+                        source="test",
+                        min_role="Manager",
+                        chunk_index=0,
+                        content_preview="grounded",
+                    )
+                ]
+            ),
+            guardrail_decisions=(
+                [
+                    schemas.GuardrailDecision(
+                        layer="input",
+                        decision="block",
+                        score=0.9,
+                        reason="test block",
+                        triggered_rules=["test_rule"],
+                    )
+                ]
+                if unauthorized
+                else []
+            ),
+        )
 
     monkeypatch.setattr(pipeline, "run_pipeline", fake_pipeline)
     authorized = {
         "id": "benign-hr",
+        "doc_id": "benign-source",
         "query": "What is the source fact?",
         "expected_keywords": ["grounded"],
         "classification": "Confidential",
@@ -197,6 +234,14 @@ def test_benign_evaluation_separates_authorized_accuracy_and_refusal_rate(
     assert calls[0]["user_role"] == calls[1]["user_role"] == "Administrator"
     assert calls[0]["user_department"] == "HR"
     assert calls[1]["user_department"] == "Analytics"
+    assert authorized_results[0]["user_department"] == "HR"
+    assert authorized_results[0]["source_doc_id"] == "benign-source"
+    assert authorized_results[0]["source_classification"] == "Confidential"
+    assert authorized_results[0]["source_department"] == "HR"
+    assert authorized_results[0]["retrieved_doc_ids"] == ["hr-source"]
+    assert authorized_results[0]["answer_accuracy_correct"]
+    assert refusal_results[0]["fired_guardrail_layers"] == ["input"]
+    assert refusal_results[0]["refusal_phrase"] == "not authorized"
     assert combined["authorized_answer_accuracy"] == 1.0
     assert combined["unauthorized_refusal_rate"] == 1.0
 
