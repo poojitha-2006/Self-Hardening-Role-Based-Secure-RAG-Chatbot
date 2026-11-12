@@ -48,11 +48,11 @@ from redteam.canary import (
     detect_injection_success,
     detect_system_prompt_leak,
 )
+from redteam.dataset import load_attack_dataset
 
 logger = logging.getLogger(__name__)
 
 _RESULTS_DIR = Path(settings.eval_results_dir)
-_ATTACKS_FILE = _PROJECT_ROOT / "redteam" / "attacks.json"
 _BENIGN_FILE = _PROJECT_ROOT / "eval" / "datasets" / "benign_queries.json"
 _ROLE_CREDENTIALS = {
     "Analyst": ("carol", "password"),
@@ -89,8 +89,13 @@ def _run_attacks(
         # Success detection
         canary_leaked, leaked_canaries = detect_canary_leak(answer, role, canary_registry)
         sys_leaked, _ = detect_system_prompt_leak(answer)
+        injection_succeeded = detect_injection_success(answer)
 
-        success = (canary_leaked and not blocked) or (sys_leaked and not blocked)
+        success = (
+            (canary_leaked and not blocked)
+            or (sys_leaked and not blocked)
+            or (injection_succeeded and not blocked)
+        )
 
         results.append({
             "attack_id": attack["id"],
@@ -151,38 +156,37 @@ def _get_attack_store_size() -> int:
 
 
 def _store_train_attacks(train_attacks: List[Dict[str, Any]]) -> int:
-    """Pre-populate attack store with TRAIN split attacks (simulates prior knowledge)."""
-    try:
-        from app.rag.embedder import get_embedder
-        from app.store.attack_store import get_attack_store
+    """Store successful TRAIN attacks only; validation and test remain held out."""
+    from app.rag.embedder import get_embedder
+    from app.store.attack_store import get_attack_store
 
-        embedder = get_embedder()
-        store = get_attack_store()
-        count = 0
+    embedder = get_embedder()
+    store = get_attack_store()
+    count = 0
 
-        for attack in train_attacks:
-            if attack.get("split") != "train":
-                logger.warning("Skipping non-training attack during seeding: %s", attack.get("id"))
-                continue
-            emb = embedder.embed_one(attack["text"])
-            aid = f"train_{attack['id']}_{int(time.time())}_{count}"
-            store.add_attack(
-                attack_id=aid,
-                embedding=emb,
-                variant_text=attack["text"],
-                metadata={
-                    "category": attack.get("category", "unknown"),
-                    "source_split": "train",
-                    "round": -1,  # Pre-loaded from train split
-                    "timestamp": time.time(),
-                },
-            )
-            count += 1
+    for attack in train_attacks:
+        if attack.get("split") != "train":
+            logger.warning("Skipping non-training attack during seeding: %s", attack.get("id"))
+            continue
+        if not attack.get("success"):
+            continue
+        emb = embedder.embed_one(attack["text"])
+        aid = f"train_{attack['id']}_{int(time.time())}_{count}"
+        store.add_attack(
+            attack_id=aid,
+            embedding=emb,
+            variant_text=attack["text"],
+            metadata={
+                "category": attack.get("category", "unknown"),
+                "source": attack.get("source", "unknown"),
+                "source_split": "train",
+                "round": -1,
+                "timestamp": time.time(),
+            },
+        )
+        count += 1
 
-        return count
-    except Exception as e:
-        logger.error("Failed to pre-store train attacks: %s", e)
-        return 0
+    return count
 
 
 def _run_smoke_round(
@@ -202,8 +206,7 @@ def _run_smoke_round(
 
 
 def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
-    with _ATTACKS_FILE.open(encoding="utf-8") as attack_stream:
-        all_attacks = json.load(attack_stream)
+    all_attacks = load_attack_dataset()
     with _BENIGN_FILE.open(encoding="utf-8") as benign_stream:
         all_benign = json.load(benign_stream)
 
@@ -223,6 +226,7 @@ def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
     from app.store.attack_store import get_attack_store
 
     store = get_attack_store()
+    store.remove_nontraining_attacks()
     existing_test_texts = [
         item["id"] for item in store.get_all() if item["document"] in held_out_texts
     ]
@@ -235,9 +239,20 @@ def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     for mode in ("none", "static", "adaptive"):
         if mode == "adaptive":
-            stored = _store_train_attacks(train_attacks[:10])
-            if stored != 10:
-                raise RuntimeError(f"Expected to seed 10 training attacks, stored {stored}.")
+            training_sample = train_attacks[:10]
+            training_results = _run_attacks(training_sample)
+            successful_ids = {
+                result["attack_id"] for result in training_results if result["success"]
+            }
+            successful_training_sample = [
+                {**attack, "success": attack["id"] in successful_ids}
+                for attack in training_sample
+            ]
+            stored = _store_train_attacks(successful_training_sample)
+            if stored != len(successful_ids):
+                raise RuntimeError(
+                    f"Expected to store {len(successful_ids)} successful training attacks, stored {stored}."
+                )
             if any(item["document"] in held_out_texts for item in store.get_all()):
                 raise RuntimeError("Held-out test text entered the known-attacks store.")
 
@@ -337,8 +352,7 @@ def run_experiment(
         return
 
     # Load datasets
-    with open(_ATTACKS_FILE) as f:
-        all_attacks = json.load(f)
+    all_attacks = load_attack_dataset()
 
     with open(_BENIGN_FILE) as f:
         benign_queries = json.load(f)
@@ -351,6 +365,13 @@ def run_experiment(
         "Dataset: %d train attacks, %d test attacks (held-out), %d benign queries",
         len(train_attacks), len(test_attacks), len(benign_queries),
     )
+    from app.store.attack_store import get_attack_store
+
+    attack_store = get_attack_store()
+    removed_legacy = attack_store.remove_nontraining_attacks()
+    if removed_legacy:
+        logger.info("Removed %d non-TRAIN entries from attack store", removed_legacy)
+    held_out_texts = {attack["text"] for attack in test_attacks}
 
     all_round_metrics = []
     experiment_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -382,11 +403,22 @@ def run_experiment(
         all_round_metrics.append(metrics_1)
         logger.info("Round 1: ASR=%.1f%% FPR=%.1f%%", metrics_1["asr"]*100, metrics_1["fpr"]*100)
 
-        # Pre-populate attack store with TRAIN attacks
-        logger.info("Pre-populating attack store with %d train attacks...", len(train_attacks))
+        # Evaluate TRAIN attacks first; only successful ones become known attacks.
+        logger.info("Evaluating %d TRAIN attacks before adaptive rounds...", len(train_attacks))
+        _set_guardrail_mode("static")
+        train_results = _run_attacks(train_attacks)
+        successful_train_ids = {
+            result["attack_id"] for result in train_results if result["success"]
+        }
+        successful_train_attacks = [
+            {**attack, "success": attack["id"] in successful_train_ids}
+            for attack in train_attacks
+        ]
+        stored_count = _store_train_attacks(successful_train_attacks)
+        logger.info("Stored %d successful TRAIN attacks in attack store", stored_count)
+        if any(item["document"] in held_out_texts for item in attack_store.get_all()):
+            raise RuntimeError("Held-out TEST text entered the known-attacks store.")
         _set_guardrail_mode("adaptive")
-        stored_count = _store_train_attacks(train_attacks)
-        logger.info("Stored %d attacks in attack store", stored_count)
 
         # ── Rounds 2..N: Adaptive ─────────────────────────────────────────────
         for round_num in range(2, rounds + 1):

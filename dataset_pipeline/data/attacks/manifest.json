@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-25T08:23:42+00:00",
+  "generated_at": "2026-11-12T13:39:17+00:00",
   "seed": 20261018,
   "budgets": {
     "train": 300,
@@ -8,27 +8,27 @@
   },
   "sources": {
     "Tensor Trust": {
-      "status": "not_attempted_authorization_required",
-      "reason": "Network downloads were not authorized in this run."
+      "status": "unavailable",
+      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
     },
     "Gandalf (Lakera)": {
-      "status": "not_attempted_authorization_required",
-      "reason": "Network downloads were not authorized in this run."
+      "status": "unavailable",
+      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
     },
     "deepset/prompt-injections": {
-      "status": "not_attempted_authorization_required",
-      "reason": "Network downloads were not authorized in this run."
+      "status": "unavailable",
+      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
     },
     "HackAPrompt": {
-      "status": "not_attempted_authorization_required",
-      "reason": "Network downloads were not authorized in this run."
+      "status": "unavailable",
+      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
     },
     "BIPIA": {
-      "status": "not_attempted_authorization_required",
-      "reason": "Network downloads were not authorized in this run."
+      "status": "unavailable",
+      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
     }
   },
-  "network_access_authorized": false,
+  "network_access_authorized": true,
   "leakage_check": {
     "status": "completed",
     "model": "sentence-transformers/all-MiniLM-L6-v2",
@@ -37,44 +37,59 @@
     "test_removed": 0
   },
   "split_counts": {
-    "train": 60,
+    "train": 106,
     "validation": 0,
-    "test": 0
+    "test": 19
   },
   "counts_by_source": {
     "train": {
-      "handwritten": 60
+      "handwritten": 60,
+      "legacy_handwritten": 46
     },
     "validation": {},
-    "test": {}
+    "test": {
+      "legacy_handwritten": 19
+    }
   },
   "counts_by_category": {
     "train": {
-      "direct_prompt_injection": 10,
-      "jailbreak_roleplay": 10,
-      "role_escalation": 10,
-      "system_prompt_secret_extraction": 10,
-      "indirect_injection": 10,
-      "exfiltration_obfuscation": 10
+      "direct_prompt_injection": 31,
+      "jailbreak_roleplay": 11,
+      "role_escalation": 14,
+      "system_prompt_secret_extraction": 12,
+      "indirect_injection": 24,
+      "exfiltration_obfuscation": 14
     },
     "validation": {},
-    "test": {}
+    "test": {
+      "role_escalation": 2,
+      "direct_prompt_injection": 9,
+      "indirect_injection": 6,
+      "system_prompt_secret_extraction": 1,
+      "exfiltration_obfuscation": 1
+    }
   },
-  "source_split_overlap": [],
+  "source_split_overlap": [
+    "legacy_handwritten"
+  ],
   "license_attribution": {
-    "handwritten": "Original synthetic test prompt, created for this project"
+    "handwritten": "Original synthetic test prompt, created for this project",
+    "legacy_handwritten": "Original handwritten attacks from this project"
   },
   "handwritten_attack_count": 60,
+  "legacy_handwritten_attack_count": 65,
   "shortfalls": {
-    "train": 240,
+    "train": 194,
     "validation": 100,
-    "test": 300
+    "test": 281
   },
   "source_split_policy": {
     "Tensor Trust": "train",
     "Gandalf (Lakera)": "train",
     "deepset/prompt-injections": "validation",
     "HackAPrompt": "test",
-    "BIPIA": "test"
+    "BIPIA": "test",
+    "legacy_handwritten": "preserve the existing train/test labels",
+    "handwritten": "train"
   }
 }

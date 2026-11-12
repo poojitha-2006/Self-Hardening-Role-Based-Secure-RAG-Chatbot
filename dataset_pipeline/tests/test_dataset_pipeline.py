@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,12 @@ from scripts.curate_corpus import (
     truncate_row,
     validate_source_row,
 )
-from redteam.build_attack_dataset import REMOTE_SOURCES, handwritten_rows, load_public_sources
+from redteam.build_attack_dataset import (
+    REMOTE_SOURCES,
+    handwritten_rows,
+    legacy_handwritten_rows,
+    load_public_sources,
+)
 from eval.build_benign_set import build_overblocking, build_unauthorized_probes, validate_answer_span
 from scripts.fetch_data import (
     PublicSession,
@@ -238,6 +244,14 @@ def test_attack_handwritten_set_is_synthetic_and_source_split_is_fixed() -> None
     expected_splits = {"Tensor Trust": "train", "Gandalf (Lakera)": "train",
                        "deepset/prompt-injections": "validation", "HackAPrompt": "test", "BIPIA": "test"}
     assert {source: config["split"] for source, config in REMOTE_SOURCES.items()} == expected_splits
+
+
+def test_legacy_handwritten_attacks_remain_a_separate_source() -> None:
+    rows = legacy_handwritten_rows()
+    assert len(rows) == 65
+    assert {row["source"] for row in rows} == {"legacy_handwritten"}
+    assert dict(Counter(row["split"] for row in rows)) == {"train": 46, "test": 19}
+    assert all(row["license"] == "Original handwritten attacks from this project" for row in rows)
 
 
 def test_attack_remote_sources_are_not_touched_without_authorization() -> None:

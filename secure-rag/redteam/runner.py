@@ -4,7 +4,7 @@ redteam/runner.py
 Red-team runner: executes attacks against the live pipeline and records results.
 
 The runner:
-  1. Loads attacks from attacks.json (filtered by split)
+  1. Loads attacks from train/validation/test JSONL files (filtered by split)
   2. Optionally generates mutations
   3. Sends each attack as a low-privilege user via the HTTP API
   4. Detects success via canary.py
@@ -19,23 +19,23 @@ Can be called from:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
-from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
 from app.config import settings
 from app.schemas import RedTeamReport, RedTeamResult
 from redteam.canary import AttackResult
+from redteam.dataset import load_attack_dataset
 
 logger = logging.getLogger(__name__)
 
-_ATTACKS_FILE = Path(__file__).parent / "attacks.json"
 _API_BASE = "http://localhost:8000"
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 # Seeded user credentials for each role
 _ROLE_CREDENTIALS = {
@@ -46,12 +46,14 @@ _ROLE_CREDENTIALS = {
 
 
 def _load_attacks(split: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Load attacks from the JSON library, optionally filtered by split."""
-    with open(_ATTACKS_FILE, encoding="utf-8") as f:
-        attacks = json.load(f)
-    if split:
-        attacks = [a for a in attacks if a.get("split") == split]
-    return attacks
+    """Load the selected canonical JSONL split or all split files."""
+    return load_attack_dataset(split)
+
+
+def _validate_local_target(base_url: str) -> None:
+    host = urlsplit(base_url).hostname
+    if host not in _LOCAL_HOSTS:
+        raise ValueError("The red-team runner is restricted to localhost targets.")
 
 
 def _login(role: str, base_url: str = _API_BASE) -> Optional[str]:
@@ -127,6 +129,8 @@ def _store_successful_attack(
             "target_role": attack.get("target_role", "unknown"),
             "target_canary": attack.get("target_canary", ""),
             "attacker_role": result.attacker_role,
+            "source": attack.get("source", "unknown"),
+            "source_split": attack.get("split"),
             "round": round_num,
             "timestamp": time.time(),
         }
@@ -141,52 +145,15 @@ def _store_successful_attack(
         logger.error("Failed to store attack in attack_store: %s", e)
 
 
-def _store_near_miss(
-    attack: Dict[str, Any],
-    variant_text: str,
-    guardrail_decisions: List[Dict[str, Any]],
-    round_num: int,
-) -> None:
-    """Store a near-miss (high risk score but not successful) in the attack store."""
-    try:
-        # Check if any guardrail gave a score above near-miss threshold
-        max_score = max(
-            (gd.get("score", 0) for gd in guardrail_decisions),
-            default=0,
-        )
-        if max_score < settings.redteam_near_miss_threshold:
-            return
-
-        from app.rag.embedder import get_embedder
-        from app.store.attack_store import get_attack_store
-
-        embedder = get_embedder()
-        attack_store = get_attack_store()
-
-        embedding = embedder.embed_one(variant_text)
-        attack_id = f"nm_{round_num}_{attack['id']}_{int(time.time())}"
-
-        metadata = {
-            "attack_id": attack["id"],
-            "category": attack.get("category", "unknown"),
-            "target_role": attack.get("target_role", "unknown"),
-            "is_near_miss": True,
-            "max_guardrail_score": max_score,
-            "round": round_num,
-            "timestamp": time.time(),
-        }
-        attack_store.add_attack(
-            attack_id=attack_id,
-            embedding=embedding,
-            variant_text=variant_text,
-            metadata=metadata,
-        )
-    except Exception as e:
-        logger.debug("Near-miss storage failed: %s", e)
-
-
 def _is_held_out_attack(attack: Dict[str, Any], requested_split: Optional[str]) -> bool:
-    return requested_split == "test" or attack.get("split") == "test"
+    return requested_split in {"validation", "test"} or attack.get("split") in {
+        "validation",
+        "test",
+    }
+
+
+def _is_training_attack(attack: Dict[str, Any], requested_split: Optional[str]) -> bool:
+    return requested_split in {None, "train"} and attack.get("split") == "train"
 
 
 def run_redteam_round(
@@ -206,13 +173,17 @@ def run_redteam_round(
         attacker_role: The role to attack as.
         max_attacks: Limit total attacks (None = all).
         include_mutations: Whether to generate mutation variants.
-        split: Filter attacks by split ('train', 'test', or None for all).
+        split: Filter attacks by split ('train', 'validation', 'test', or None for all).
         base_url: API base URL.
         round_number: Current round number (for metadata).
 
     Returns:
         RedTeamReport with results.
     """
+    _validate_local_target(base_url)
+    from app.store.attack_store import get_attack_store
+
+    get_attack_store().remove_nontraining_attacks()
     attacks = _load_attacks(split=split)
     if max_attacks:
         attacks = attacks[:max_attacks]
@@ -286,17 +257,13 @@ def run_redteam_round(
 
         if ar.success:
             successful_attacks += 1
-            if not _is_held_out_attack(attack, split):
+            if _is_training_attack(attack, split):
                 _store_successful_attack(attack, variant_text, ar, round_number)
                 new_attacks_stored += 1
                 logger.warning(
                     "ATTACK SUCCESS: id=%s category=%s canaries=%s",
                     attack["id"], attack.get("category"), ar.leaked_canaries,
                 )
-        elif not _is_held_out_attack(attack, split):
-            # Store near-misses too
-            _store_near_miss(attack, variant_text, guardrail_decisions, round_number)
-
         results.append(
             RedTeamResult(
                 attack_id=attack["id"],
@@ -315,7 +282,6 @@ def run_redteam_round(
 
     # Get current attack store size
     try:
-        from app.store.attack_store import get_attack_store
         store_size = get_attack_store().count
     except Exception:
         store_size = 0

@@ -14,6 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "data/attacks"
+LEGACY_ATTACKS_FILE = ROOT.parent / "secure-rag" / "redteam" / "attacks.json"
 MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 SPLIT_BUDGETS = {"train": 300, "validation": 100, "test": 300}
 CATEGORY_ORDER = (
@@ -122,6 +123,29 @@ def handwritten_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def legacy_handwritten_rows() -> list[dict[str, Any]]:
+    """Load the original 65 project attacks as a separately attributed source."""
+    with LEGACY_ATTACKS_FILE.open(encoding="utf-8") as stream:
+        legacy_rows = json.load(stream)
+    if not isinstance(legacy_rows, list) or len(legacy_rows) != 65:
+        raise ValueError(f"Expected 65 legacy handwritten attacks in {LEGACY_ATTACKS_FILE}")
+
+    rows = []
+    for row in legacy_rows:
+        text = row.get("text")
+        split = row.get("split")
+        if not isinstance(text, str) or split not in {"train", "test"}:
+            raise ValueError(f"Invalid legacy attack record: {row.get('id', '<missing-id>')}")
+        rows.append({
+            **row,
+            "source": "legacy_handwritten",
+            "category": classify(text),
+            "language": "en",
+            "license": "Original handwritten attacks from this project",
+        })
+    return rows
+
+
 def classify(text: str) -> str:
     lowered = text.lower()
     if any(term in lowered for term in ("translate", "encode", "base64", "hexadecimal", "obfuscat", "summarize")):
@@ -166,7 +190,11 @@ def load_public_sources(allow_network: bool, manifest: dict[str, Any]) -> list[d
         from huggingface_hub import HfApi
     except ImportError as exc:
         for name in REMOTE_SOURCES:
-            manifest["sources"][name] = {"status": "unavailable", "reason": f"Missing optional dependency: {exc.name}"}
+            dependency = getattr(exc, "name", None) or "datasets/huggingface_hub"
+            manifest["sources"][name] = {
+                "status": "unavailable",
+                "reason": f"Could not import optional dependency '{dependency}': {exc}",
+            }
         return []
 
     api = HfApi()
@@ -302,11 +330,15 @@ def build(allow_network: bool = False, allow_model_download: bool = False, seed:
                                 "seed": seed, "budgets": SPLIT_BUDGETS, "sources": {},
                                 "network_access_authorized": allow_network}
     handwritten = handwritten_rows()
+    legacy_handwritten = legacy_handwritten_rows()
     remote = load_public_sources(allow_network, manifest)
     remote_train = [row for row in remote if row["split"] == "train"]
-    train = stratified_sample(handwritten + remote_train, SPLIT_BUDGETS["train"], seed)
+    legacy_train = [row for row in legacy_handwritten if row["split"] == "train"]
+    legacy_test = [row for row in legacy_handwritten if row["split"] == "test"]
+    train = stratified_sample(handwritten + legacy_train + remote_train, SPLIT_BUDGETS["train"], seed)
     validation = stratified_sample([row for row in remote if row["split"] == "validation"], SPLIT_BUDGETS["validation"], seed + 1)
-    test = stratified_sample([row for row in remote if row["split"] == "test"], SPLIT_BUDGETS["test"], seed + 2)
+    test = stratified_sample(legacy_test + [row for row in remote if row["split"] == "test"],
+                             SPLIT_BUDGETS["test"], seed + 2)
     train, validation, test = embedding_leakage_filter(train, validation, test, allow_model_download, manifest)
     for split, rows in (("train", train), ("validation", validation), ("test", test)):
         write_jsonl(OUTPUT_DIR / f"{split}.jsonl", rows)
@@ -322,10 +354,15 @@ def build(allow_network: bool = False, allow_model_download: bool = False, seed:
     manifest["source_split_overlap"] = sorted(source for source, splits in source_splits.items() if len(splits) > 1)
     manifest["license_attribution"] = {row["source"]: row["license"] for row in train + validation + test}
     manifest["handwritten_attack_count"] = len(handwritten)
+    manifest["legacy_handwritten_attack_count"] = len(legacy_handwritten)
     manifest["shortfalls"] = {split: max(0, budget - len(rows)) for split, budget, rows in (
         ("train", SPLIT_BUDGETS["train"], train), ("validation", SPLIT_BUDGETS["validation"], validation),
         ("test", SPLIT_BUDGETS["test"], test))}
-    manifest["source_split_policy"] = {name: config["split"] for name, config in REMOTE_SOURCES.items()}
+    manifest["source_split_policy"] = {
+        **{name: config["split"] for name, config in REMOTE_SOURCES.items()},
+        "legacy_handwritten": "preserve the existing train/test labels",
+        "handwritten": "train",
+    }
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUTPUT_DIR / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest
@@ -343,7 +380,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     manifest = build(args.allow_network, args.allow_model_download, args.seed)
     print(json.dumps({"split_counts": manifest["split_counts"], "shortfalls": manifest["shortfalls"],
-                      "sources": manifest["sources"], "leakage_check": manifest["leakage_check"]}, indent=2))
+                      "counts_by_source": manifest["counts_by_source"],
+                      "counts_by_category": manifest["counts_by_category"],
+                      "sources": manifest["sources"], "source_split_overlap": manifest["source_split_overlap"],
+                      "legacy_handwritten_attack_count": manifest["legacy_handwritten_attack_count"],
+                      "leakage_check": manifest["leakage_check"]}, indent=2))
     return 0
 
 

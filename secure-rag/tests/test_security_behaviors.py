@@ -228,7 +228,7 @@ def test_input_guard_blocks_transformation_of_confidential_text() -> None:
 
 
 def test_held_out_attacks_are_never_learned(monkeypatch: pytest.MonkeyPatch) -> None:
-    from redteam.runner import _is_held_out_attack
+    from redteam.runner import _is_held_out_attack, _is_training_attack
     from app.rag import embedder
     from app.store import attack_store
     from eval import run_experiment
@@ -239,8 +239,17 @@ def test_held_out_attacks_are_never_learned(monkeypatch: pytest.MonkeyPatch) -> 
     assert _is_held_out_attack(
         {"id": "held-out", "split": "test"}, requested_split=None
     )
+    assert _is_held_out_attack(
+        {"id": "validation", "split": "validation"}, requested_split=None
+    )
     assert not _is_held_out_attack(
         {"id": "training", "split": "train"}, requested_split="train"
+    )
+    assert _is_training_attack(
+        {"id": "training", "split": "train"}, requested_split=None
+    )
+    assert not _is_training_attack(
+        {"id": "held-out", "split": "test"}, requested_split=None
     )
 
     class FakeEmbedder:
@@ -259,15 +268,89 @@ def test_held_out_attacks_are_never_learned(monkeypatch: pytest.MonkeyPatch) -> 
 
     stored_count = run_experiment._store_train_attacks(
         [
-            {"id": "train-1", "split": "train", "text": "training prompt"},
-            {"id": "test-1", "split": "test", "text": "TEST prompt"},
-        ]
+            {
+                "id": "train-1",
+                "split": "train",
+                "text": "training prompt",
+                "source": "unit-test",
+                "success": True,
+            },
+            {
+                "id": "train-2",
+                "split": "train",
+                "text": "unsuccessful training prompt",
+                "source": "unit-test",
+                "success": False,
+            },
+            {
+                "id": "test-1",
+                "split": "test",
+                "text": "TEST prompt",
+                "source": "unit-test",
+                "success": True,
+            },
+        ],
     )
 
     assert stored_count == 1
     assert len(fake_store.entries) == 1
     assert fake_store.entries[0]["variant_text"] == "training prompt"
     assert fake_store.entries[0]["metadata"]["source_split"] == "train"
+    assert fake_store.entries[0]["metadata"]["source"] == "unit-test"
+    assert all("TEST prompt" not in entry["variant_text"] for entry in fake_store.entries)
+
+
+def test_attack_dataset_loader_reads_jsonl_splits_and_legacy_source() -> None:
+    from redteam.dataset import load_attack_dataset
+
+    attacks = load_attack_dataset()
+    train = load_attack_dataset("train")
+    validation = load_attack_dataset("validation")
+    test = load_attack_dataset("test")
+
+    assert all(attack["split"] == "train" for attack in train)
+    assert all(attack["split"] == "validation" for attack in validation)
+    assert all(attack["split"] == "test" for attack in test)
+    assert len([attack for attack in attacks if attack.get("source") == "legacy_handwritten"]) == 65
+    assert not (set(attack["text"] for attack in test) & set(attack["text"] for attack in train))
+
+
+def test_attack_store_removes_entries_without_train_provenance() -> None:
+    from app.store.attack_store import AttackStore
+
+    class Collection:
+        def __init__(self) -> None:
+            self.entries = {
+                "legacy-test": {"source_split": None},
+                "validation": {"source_split": "validation"},
+                "legacy-train": {"source_split": "train"},
+                "training": {"source_split": "train", "source": "unit-test"},
+            }
+
+        def get(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "ids": list(self.entries),
+                "metadatas": list(self.entries.values()),
+            }
+
+        def delete(self, ids: list[str]) -> None:
+            for attack_id in ids:
+                del self.entries[attack_id]
+
+    store = AttackStore.__new__(AttackStore)
+    collection = Collection()
+    store._collection = collection
+
+    assert store.remove_nontraining_attacks() == 3
+    assert list(collection.entries) == ["training"]
+
+
+def test_redteam_runner_rejects_nonlocal_targets() -> None:
+    from redteam.runner import _validate_local_target
+
+    _validate_local_target("http://localhost:8000")
+    with pytest.raises(ValueError, match="restricted to localhost"):
+        _validate_local_target("https://example.com")
 
 
 def test_experiment_guardrail_mode_changes_in_process_settings(

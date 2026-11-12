@@ -3,9 +3,8 @@ app/store/attack_store.py
 =========================
 ChromaDB collection for KNOWN ATTACKS (the adaptive guardrail's memory).
 
-Every successful red-team attack is stored here with its embedding so that
-future queries can be checked for similarity.  Near-miss attempts (high
-risk score but not quite a canary leak) are also optionally stored.
+Only successful TRAIN attacks are stored here with their embeddings so future
+queries can be checked for similarity. Legacy and held-out entries are removed.
 
 This is the core of the "self-hardening" loop:
   red-team finds attack → stored here → adaptive guard blocks similar future attacks
@@ -31,7 +30,7 @@ class AttackStore:
     Stores successful attacks as embeddings for similarity-based detection.
 
     Each stored attack has metadata:
-      attack_id, category, round, canary, target_role, timestamp, variant_text
+      attack_id, category, source, source_split, round, timestamp, variant_text
     """
 
     def __init__(self) -> None:
@@ -48,6 +47,9 @@ class AttackStore:
             settings.chroma_attack_collection,
             self._collection.count(),
         )
+        removed = self.remove_nontraining_attacks()
+        if removed:
+            logger.warning("Removed %d attack entries without full TRAIN provenance", removed)
 
     @property
     def count(self) -> int:
@@ -60,7 +62,7 @@ class AttackStore:
         variant_text: str,
         metadata: Dict[str, Any],
     ) -> None:
-        """Store a successful (or near-miss) attack with its embedding."""
+        """Store a successful TRAIN attack with its embedding and provenance."""
         metadata["variant_text"] = variant_text[:500]  # truncate for storage
         metadata["timestamp"] = metadata.get("timestamp", time.time())
         self._collection.upsert(
@@ -88,6 +90,7 @@ class AttackStore:
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=n,
+            where={"source_split": {"$eq": "train"}},
             include=["documents", "metadatas", "distances"],
         )
         ids = results["ids"][0] if results["ids"] else []
@@ -110,6 +113,24 @@ class AttackStore:
             {"id": i, "document": d, "metadata": m}
             for i, d, m in zip(ids, docs, metas)
         ]
+
+    def remove_nontraining_attacks(self) -> int:
+        """Remove legacy, validation, and test entries lacking full TRAIN provenance."""
+        result = self._collection.get(include=["metadatas"])
+        ids = result.get("ids", [])
+        metadatas = result.get("metadatas", [])
+        nontraining_ids = [
+            attack_id
+            for attack_id, metadata in zip(ids, metadatas)
+            if (
+                not metadata
+                or metadata.get("source_split") != "train"
+                or not metadata.get("source")
+            )
+        ]
+        if nontraining_ids:
+            self._collection.delete(ids=nontraining_ids)
+        return len(nontraining_ids)
 
     def get_by_category(self, category: str) -> List[Dict[str, Any]]:
         """Return all attacks of a specific category."""

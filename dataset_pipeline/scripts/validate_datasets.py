@@ -20,6 +20,7 @@ ATTACK_CATEGORIES = {
     "direct_prompt_injection", "jailbreak_roleplay", "role_escalation",
     "system_prompt_secret_extraction", "indirect_injection", "exfiltration_obfuscation",
 }
+ALLOWED_CROSS_SPLIT_SOURCES = {"legacy_handwritten"}
 
 
 def load_json(path: Path) -> Any:
@@ -138,6 +139,7 @@ def validate_attacks() -> tuple[list[str], dict[str, Any]]:
         manifest = load_json(manifest_path)
     seen_ids: set[str] = set()
     source_splits: dict[str, set[str]] = {}
+    text_splits: dict[str, str] = {}
     category_counts: dict[str, dict[str, int]] = {}
     for split, rows in rows_by_split.items():
         categories: Counter[str] = Counter()
@@ -154,13 +156,23 @@ def validate_attacks() -> tuple[list[str], dict[str, Any]]:
             if row.get("id") in seen_ids:
                 errors.append(f"Duplicate attack ID: {row.get('id')}")
             seen_ids.add(row.get("id"))
+            normalized_text = str(row.get("text", "")).strip().casefold()
+            previous_split = text_splits.get(normalized_text)
+            if previous_split and previous_split != split:
+                errors.append(f"Duplicate attack text crosses {previous_split}/{split}: {row.get('id')}")
+            text_splits[normalized_text] = split
             source_splits.setdefault(str(row.get("source")), set()).add(split)
             categories[str(row.get("category"))] += 1
         category_counts[split] = dict(categories)
     overlaps = {source: sorted(splits) for source, splits in source_splits.items() if len(splits) > 1}
-    if overlaps:
-        errors.append(f"Attack sources overlap splits: {overlaps}")
-    if manifest.get("source_split_overlap"):
+    unexpected_overlaps = {
+        source: splits for source, splits in overlaps.items()
+        if source not in ALLOWED_CROSS_SPLIT_SOURCES
+    }
+    if unexpected_overlaps:
+        errors.append(f"Attack sources overlap splits: {unexpected_overlaps}")
+    manifest_overlaps = set(manifest.get("source_split_overlap", []))
+    if manifest_overlaps - ALLOWED_CROSS_SPLIT_SOURCES:
         errors.append("Attack manifest reports source split overlap")
     leakage = manifest.get("leakage_check", {})
     if leakage.get("status") != "completed":
