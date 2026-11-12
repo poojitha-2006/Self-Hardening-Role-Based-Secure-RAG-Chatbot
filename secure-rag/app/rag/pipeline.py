@@ -139,6 +139,7 @@ def run_pipeline(
             user_role=user_role,
             n_results=5,
             user_department=user_department,
+            enforce_access=settings.guardrail_mode != "none",
         )
     except Exception as e:
         logger.error("Retrieval failed: %s", e)

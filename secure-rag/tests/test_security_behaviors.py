@@ -54,6 +54,55 @@ def test_department_deny_overrides_manager_role_allow(monkeypatch: pytest.Monkey
     }
 
 
+def test_none_mode_retrieves_confidential_chunk_but_static_mode_filters_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+    from app.rag import retriever
+
+    confidential_chunk = {
+        "id": "confidential-legal",
+        "document": "Synthetic confidential contract details.",
+        "metadata": {
+            "min_role": "Manager",
+            "department": "Legal",
+            "classification": "Confidential",
+        },
+        "distance": 0.1,
+    }
+
+    class Embedder:
+        def embed_one(self, _query: str) -> list[float]:
+            return [0.0]
+
+    class Store:
+        def query(self, **kwargs: object) -> list[dict[str, object]]:
+            where = kwargs["where"]
+            if where is None:
+                return [confidential_chunk]
+            assert where == retriever._build_rbac_filter("Analyst", "Analytics")
+            return []
+
+    monkeypatch.setattr(retriever, "get_embedder", Embedder)
+    monkeypatch.setattr(retriever, "get_vector_store", Store)
+    monkeypatch.setattr(settings, "guardrail_mode", "none")
+
+    assert retriever.retrieve(
+        "contract details",
+        user_role="Analyst",
+        user_department="Analytics",
+        enforce_access=settings.guardrail_mode != "none",
+    ) == [confidential_chunk]
+
+    monkeypatch.setattr(settings, "guardrail_mode", "static")
+    assert retriever.retrieve(
+        "contract details",
+        user_role="Analyst",
+        user_department="Analytics",
+        enforce_access=settings.guardrail_mode != "none",
+    ) == []
+
+
 def test_prompt_role_claim_does_not_override_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
     from app import main
     from app.schemas import ChatResponse

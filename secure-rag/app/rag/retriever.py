@@ -88,9 +88,10 @@ def retrieve(
     n_results: int = 5,
     include_injection_fixtures: bool = False,
     user_department: Optional[str] = None,
+    enforce_access: bool = True,
 ) -> List[Dict[str, Any]]:
     """
-    Retrieve relevant chunks for `query` that are accessible to `user_role`.
+    Retrieve relevant chunks for `query`; optionally enforce role and department access.
 
     Args:
         query: The user's question text.
@@ -108,27 +109,27 @@ def retrieve(
     # Embed the query
     query_embedding = embedder.embed_one(query)
 
-    # Build RBAC where clause (PRIMARY filter)
-    where_clause = _build_rbac_filter(user_role, user_department)
+    # GUARDRAIL_MODE=none is used only for the intentionally vulnerable eval baseline.
+    where_clause = _build_rbac_filter(user_role, user_department) if enforce_access else None
 
-    # Execute RBAC-filtered query
+    # Execute the vector query, with the RBAC filter disabled only for the baseline.
     raw_results = store.query(
         query_embedding=query_embedding,
         n_results=n_results,
         where=where_clause,
     )
 
-    # POST-RETRIEVAL ASSERTION (defense in depth)
+    # Keep defense-in-depth checks enabled in all protected modes.
     safe_results = []
     for chunk in raw_results:
-        if not _can_access_chunk(chunk["metadata"], user_role, user_department):
+        if enforce_access and not _can_access_chunk(chunk["metadata"], user_role, user_department):
             # This should NEVER happen given the primary filter — log as security event
             logger.error(
                 "SECURITY VIOLATION: RBAC primary filter bypass detected! "
                 "user_role=%s chunk_min_role=%s chunk_id=%s",
                 user_role, chunk["metadata"].get("min_role", "Administrator"), chunk["id"],
             )
-            continue  # Drop the chunk
+            continue
 
         # Optionally skip injection test fixtures from normal retrieval
         if not include_injection_fixtures and chunk["metadata"].get("is_injection_fixture"):
