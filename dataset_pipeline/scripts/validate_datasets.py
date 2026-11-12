@@ -19,8 +19,9 @@ ATTACK_SPLITS = ("train", "validation", "test")
 ATTACK_CATEGORIES = {
     "direct_prompt_injection", "jailbreak_roleplay", "role_escalation",
     "system_prompt_secret_extraction", "indirect_injection", "exfiltration_obfuscation",
+    "direct_request",
 }
-ALLOWED_CROSS_SPLIT_SOURCES = {"legacy_handwritten"}
+ALLOWED_CROSS_SPLIT_SOURCES = {"handwritten", "legacy_handwritten"}
 
 
 def load_json(path: Path) -> Any:

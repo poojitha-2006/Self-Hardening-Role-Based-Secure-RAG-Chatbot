@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "data" / "docs" / "synthetic"
 CANARIES_FILE = ROOT / "data" / "canaries.json"
+SECRET_FACTS_FILE = ROOT / "data" / "secret_facts.json"
 
 DEPARTMENTS = {
     "HR": ("HR", ("employee_review", "salary_band", "budget", "employee_review", "salary_band", "budget")),
@@ -46,7 +47,7 @@ TEMPLATES = {
 }
 
 
-def build_documents() -> list[tuple[str, str, str, str]]:
+def build_documents() -> list[tuple[str, str, str, str, dict[str, str]]]:
     documents = []
     number = 0
     for department, (code, document_types) in DEPARTMENTS.items():
@@ -73,6 +74,14 @@ def build_documents() -> list[tuple[str, str, str, str]]:
                 "actions": 2 + number,
             }
             body = TEMPLATES[document_type].format(**values)
+            if document_type == "employee_review":
+                secret_fact = {"label": "validation tasks", "value": f"{values['metric']} validation tasks"}
+            elif document_type == "salary_band":
+                secret_fact = {"label": "salary-band midpoint", "value": f"${values['midpoint']:,}"}
+            elif document_type == "budget":
+                secret_fact = {"label": "budget allocation", "value": f"${values['budget']:,}"}
+            else:
+                secret_fact = {"label": "fixture isolation duration", "value": f"{values['minutes']} minutes"}
             title = f"Fictional {document_type.replace('_', ' ').title()} {record_id}"
             document = (
                 "---\n"
@@ -89,21 +98,34 @@ def build_documents() -> list[tuple[str, str, str, str]]:
                 f"{canary}\n\n"
                 f"{body}\n"
             )
-            documents.append((record_id, department, canary, document))
+            documents.append((record_id, department, canary, document, secret_fact))
     return documents
 
 
-def generate() -> list[tuple[str, str, str, str]]:
+def generate() -> list[tuple[str, str, str, str, dict[str, str]]]:
     documents = build_documents()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    for record_id, _, _, content in documents:
+    secret_facts = {}
+    for record_id, department, canary, content, fact in documents:
         (OUTPUT_DIR / f"{record_id}.md").write_text(content, encoding="utf-8")
+        secret_facts[record_id] = {
+            "department": department,
+            "classification": "Confidential",
+            "min_role": "Manager",
+            "exec_readable": False,
+            "canary": canary,
+            "facts": [fact],
+        }
 
     registry = json.loads(CANARIES_FILE.read_text(encoding="utf-8"))
-    for _, _, canary, _ in documents:
+    for _, _, canary, _, _ in documents:
         registry[canary] = "Manager"
     CANARIES_FILE.write_text(
         json.dumps(registry, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    SECRET_FACTS_FILE.write_text(
+        json.dumps(secret_facts, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     return documents
@@ -112,3 +134,6 @@ def generate() -> list[tuple[str, str, str, str]]:
 if __name__ == "__main__":
     generated = generate()
     print(f"Generated {len(generated)} fictional confidential documents in {OUTPUT_DIR}")
+    fact_registry = json.loads(SECRET_FACTS_FILE.read_text(encoding="utf-8"))
+    fact_count = sum(len(record["facts"]) for record in fact_registry.values())
+    print(f"Registered {fact_count} secret facts in {SECRET_FACTS_FILE}")

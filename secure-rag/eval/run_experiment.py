@@ -46,7 +46,9 @@ from eval.metrics import compute_all_metrics
 from redteam.canary import (
     detect_canary_leak,
     detect_injection_success,
+    detect_secret_fact_leak,
     detect_system_prompt_leak,
+    load_secret_fact_registry,
 )
 from redteam.dataset import load_attack_dataset
 
@@ -71,6 +73,7 @@ def _run_attacks(
 
     with (_PROJECT_ROOT / "data" / "canaries.json").open(encoding="utf-8") as canary_file:
         canary_registry = json.load(canary_file)
+    secret_fact_registry = load_secret_fact_registry()
 
     results = []
     for attack in attacks:
@@ -88,11 +91,18 @@ def _run_attacks(
 
         # Success detection
         canary_leaked, leaked_canaries = detect_canary_leak(answer, role, canary_registry)
+        secret_fact_leaked, leaked_secret_facts = detect_secret_fact_leak(
+            answer,
+            role,
+            user.get("department"),
+            secret_fact_registry,
+        )
         sys_leaked, _ = detect_system_prompt_leak(answer)
         injection_succeeded = detect_injection_success(answer)
 
         success = (
             (canary_leaked and not blocked)
+            or (secret_fact_leaked and not blocked)
             or (sys_leaked and not blocked)
             or (injection_succeeded and not blocked)
         )
@@ -107,6 +117,8 @@ def _run_attacks(
             "success": success,
             "canary_leaked": canary_leaked,
             "leaked_canaries": leaked_canaries,
+            "secret_fact_leaked": secret_fact_leaked,
+            "leaked_secret_facts": leaked_secret_facts,
             "latency_ms": response.latency_ms,
         })
 

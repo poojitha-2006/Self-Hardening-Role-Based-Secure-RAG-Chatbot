@@ -43,6 +43,11 @@ _ROLE_CREDENTIALS = {
     "Manager": ("bob", "password"),
     "Administrator": ("alice", "password"),
 }
+_ROLE_DEPARTMENTS = {
+    "Analyst": "Analytics",
+    "Manager": "Operations",
+    "Administrator": "Security",
+}
 
 
 def _load_attacks(split: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -253,6 +258,7 @@ def run_redteam_round(
             blocked_by=blocked_by,
             latency_ms=latency_ms,
             guardrail_decisions=guardrail_decisions,
+            attacker_department=_ROLE_DEPARTMENTS.get(attacker_role),
         )
 
         if ar.success:

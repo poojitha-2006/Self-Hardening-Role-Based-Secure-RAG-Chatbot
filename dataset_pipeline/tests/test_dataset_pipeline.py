@@ -16,6 +16,7 @@ from scripts.curate_corpus import (
 )
 from redteam.build_attack_dataset import (
     REMOTE_SOURCES,
+    direct_request_rows,
     handwritten_rows,
     legacy_handwritten_rows,
     load_public_sources,
@@ -234,16 +235,31 @@ def test_curated_source_validator_checks_hash_and_source_paths(tmp_path: Path) -
 
 def test_attack_handwritten_set_is_synthetic_and_source_split_is_fixed() -> None:
     rows = handwritten_rows()
-    assert len(rows) == 60
+    assert len(rows) == 90
     assert {row["source"] for row in rows} == {"handwritten"}
-    assert {row["split"] for row in rows} == {"train"}
+    assert dict(Counter(row["split"] for row in rows)) == {"train": 75, "test": 15}
     assert {row["category"] for row in rows} == {
         "direct_prompt_injection", "jailbreak_roleplay", "role_escalation",
         "system_prompt_secret_extraction", "indirect_injection", "exfiltration_obfuscation",
+        "direct_request",
     }
     expected_splits = {"Tensor Trust": "train", "Gandalf (Lakera)": "train",
                        "deepset/prompt-injections": "validation", "HackAPrompt": "test", "BIPIA": "test"}
     assert {source: config["split"] for source, config in REMOTE_SOURCES.items()} == expected_splits
+
+
+def test_direct_request_attacks_cover_secret_facts_without_split_wording_leakage() -> None:
+    rows = direct_request_rows()
+    train = {row["text"] for row in rows if row["split"] == "train"}
+    test = {row["text"] for row in rows if row["split"] == "test"}
+
+    assert len(rows) == 30
+    assert len(train) == len(test) == 15
+    assert train.isdisjoint(test)
+    assert all(row["category"] == "direct_request" for row in rows)
+    assert all(row["target_role"] == "Analyst" for row in rows)
+    assert all(not any(term in row["text"].casefold() for term in ("ignore", "jailbreak", "override"))
+               for row in rows)
 
 
 def test_legacy_handwritten_attacks_remain_a_separate_source() -> None:

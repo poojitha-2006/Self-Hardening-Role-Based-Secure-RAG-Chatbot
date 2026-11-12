@@ -71,10 +71,13 @@ def test_synthetic_confidential_docs_have_unique_chunked_canaries() -> None:
     from app.rag.ingest import chunk_text, parse_doc_frontmatter
 
     docs_dir = ROOT / "data" / "docs" / "synthetic"
+    secret_facts = json.loads((ROOT / "data" / "secret_facts.json").read_text(encoding="utf-8"))
     files = sorted(docs_dir.glob("*.md"))
 
     assert len(files) == 30
+    assert len(secret_facts) == 30
     canaries: set[str] = set()
+    facts: set[str] = set()
     departments: set[str] = set()
     for path in files:
         metadata, body = parse_doc_frontmatter(path.read_text(encoding="utf-8"))
@@ -87,6 +90,16 @@ def test_synthetic_confidential_docs_have_unique_chunked_canaries() -> None:
         canaries.add(tokens[0])
         departments.add(metadata["department"])
         assert any(tokens[0] in chunk for chunk in chunk_text(body))
+        record = secret_facts[metadata["doc_id"]]
+        assert record["canary"] == tokens[0]
+        assert record["department"] == metadata["department"]
+        assert record["classification"] == "Confidential"
+        assert 1 <= len(record["facts"]) <= 2
+        for fact in record["facts"]:
+            value = fact["value"]
+            assert value in body
+            assert value not in facts
+            facts.add(value)
 
     assert departments == {"HR", "Finance", "Security", "Engineering", "Sales"}
 
