@@ -313,13 +313,49 @@ def _run_smoke_round(
         guardrail_mode=mode,
     )
     diagnostic_groups = {
-        "authorized": authorized_results[:5],
+        "authorized": authorized_results if mode == "none" else authorized_results[:5],
         "refusal_probes": refusal_results[:5],
     }
     for rows in diagnostic_groups.values():
         for row in rows:
             row["unfiltered_top_doc_ids"] = _unfiltered_top_doc_ids(row["question"])
+            if mode == "none":
+                row["diagnostic_chunks"] = _diagnostic_chunks(
+                    row["question"],
+                    row["role"],
+                    row["user_department"],
+                    enforce_access=False,
+                )
     return metrics, diagnostic_groups
+
+
+def _diagnostic_chunks(
+    question: str,
+    user_role: str,
+    user_department: str,
+    enforce_access: bool,
+) -> List[Dict[str, Any]]:
+    """Capture ranked chunk details without changing what the pipeline retrieves."""
+    from app.rag.retriever import retrieve
+
+    chunks = retrieve(
+        query=question,
+        user_role=user_role,
+        n_results=settings.retrieval_n_results,
+        user_department=user_department,
+        enforce_access=enforce_access,
+    )
+    return [
+        {
+            "chunk_id": chunk["id"],
+            "doc_id": chunk["metadata"].get("doc_id", ""),
+            "chunk_index": chunk["metadata"].get("chunk_index", 0),
+            "title": chunk["metadata"].get("title", ""),
+            "similarity": 1.0 - float(chunk["distance"]),
+            "text": chunk["document"],
+        }
+        for chunk in chunks
+    ]
 
 
 def _unfiltered_top_doc_ids(question: str) -> List[str]:
@@ -400,7 +436,7 @@ def _write_diagnostics(
         "# Smoke evaluation diagnostics",
         "",
         f"- Seed: `{seed}`",
-        "- Each round shows the first 5 sampled authorized queries and first 5 refusal probes.",
+        "- The none round shows all 10 sampled authorized queries and the first 5 refusal probes; protected rounds show the first 5 of each.",
         "- `unfiltered_top_doc_ids` is an offline diagnostic query only; it is not shown to the model.",
         "- The answer scorer requires at least 60% expected-keyword coverage, case-insensitively, and rejects explicit no-information responses.",
         "",
@@ -438,6 +474,37 @@ def _write_diagnostics(
                 lines.append("- Final answer:")
                 lines.append("")
                 lines.append(f"  <pre>{html.escape(str(row['answer']), quote=False)}</pre>")
+                diagnostic_chunks = row.get("diagnostic_chunks", [])
+                if diagnostic_chunks:
+                    source_doc_id = str(row.get("source_doc_id") or "")
+                    source_found = any(
+                        chunk["doc_id"] == source_doc_id
+                        for chunk in diagnostic_chunks
+                    )
+                    lines.append(
+                        f"- Source document present in retrieved context by doc_id: `{source_found}`."
+                    )
+                    lines.append("- Retrieved chunks (ranked; first 200 characters shown):")
+                    for rank, chunk in enumerate(diagnostic_chunks, 1):
+                        lines.extend([
+                            (
+                                f"  - Rank {rank}: doc_id `{chunk['doc_id']}`, "
+                                f"chunk_index `{chunk['chunk_index']}`, "
+                                f"similarity `{chunk['similarity']:.6f}`."
+                            ),
+                            f"    <pre>{html.escape(str(chunk['text'][:200]), quote=False)}</pre>",
+                        ])
+                    if refusal_probe and row.get("id") == "unauthorized-0007":
+                        lines.append("- Exact context chunks sent to the model:")
+                        for rank, chunk in enumerate(diagnostic_chunks, 1):
+                            lines.extend([
+                                (
+                                    f"  - Rank {rank}: chunk_id `{chunk['chunk_id']}`, "
+                                    f"doc_id `{chunk['doc_id']}`, "
+                                    f"chunk_index `{chunk['chunk_index']}`."
+                                ),
+                                f"    <pre>{html.escape(str(chunk['text']), quote=False)}</pre>",
+                            ])
                 if refusal_probe:
                     lines.append(
                         f"- Scoring: refused=`{row['refused']}`; blocked=`{row['blocked']}`; "
