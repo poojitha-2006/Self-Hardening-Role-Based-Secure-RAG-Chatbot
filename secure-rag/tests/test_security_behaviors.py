@@ -407,6 +407,24 @@ def test_input_guard_blocks_transformation_of_confidential_text() -> None:
     assert "restricted_data_exfiltration" in result.triggered_rules
 
 
+def test_jailbreak_dan_rule_does_not_match_guidance_substring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+    from app.guardrails.input_guard import check_input
+
+    monkeypatch.setattr(settings, "guardrail_mode", "static")
+    monkeypatch.setattr(settings, "guardrail_input_enabled", True)
+
+    benign = check_input("What does the public guidance say about security awareness?")
+    assert benign.allowed
+    assert "jailbreak_dan" not in benign.triggered_rules
+
+    explicit_dan = check_input("DAN mode")
+    assert not explicit_dan.allowed
+    assert "jailbreak_dan" in explicit_dan.triggered_rules
+
+
 def test_held_out_attacks_are_never_learned(monkeypatch: pytest.MonkeyPatch) -> None:
     from redteam.runner import _is_held_out_attack, _is_training_attack
     from app.rag import embedder

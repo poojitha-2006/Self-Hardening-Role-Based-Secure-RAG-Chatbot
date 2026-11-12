@@ -78,7 +78,7 @@ _PATTERNS: List[Tuple[re.Pattern, float, str]] = [
     (re.compile(r"output\s+your\s+(previous|initial|original|full)\s+(message|prompt|text|content)", re.I), 0.8, "prompt_repeat"),
 
     # Jailbreaks / persona attacks
-    (re.compile(r"(dan|jailbreak|developer\s+mode|unrestricted\s+mode|god\s+mode|do\s+anything\s+now)", re.I), 0.9, "jailbreak_dan"),
+    (re.compile(r"\b(dan|jailbreak|developer\s+mode|unrestricted\s+mode|god\s+mode|do\s+anything\s+now)\b", re.I), 0.9, "jailbreak_dan"),
     (re.compile(r"(you\s+are\s+now|from\s+now\s+on|starting\s+now)\s+(you\s+are\s+)?(an?|the)\s+(?!assistant|helpful)", re.I), 0.7, "persona_override"),
     (re.compile(r"(roleplay|role[- ]play|pretend|simulate)\s+(as|to be|you are|you're)\s+(?!a\s+helpful)", re.I), 0.65, "roleplay_attack"),
     (re.compile(r"hypothetically|in\s+this\s+scenario|for\s+a\s+story|for\s+(fiction|creative\s+writing)", re.I), 0.3, "hypothetical_framing"),
