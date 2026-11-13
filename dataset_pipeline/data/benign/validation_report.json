@@ -1,176 +1,179 @@
 {
-  "generated_at": "2026-11-12T15:04:48+00:00",
+  "generated_at": "2026-11-13T05:23:03+00:00",
   "model_requested": "llama3.2:3b",
   "model_actual": "llama3.2:latest",
   "endpoint": "http://127.0.0.1:11434/api/generate",
   "model_temperature": 0,
   "corpus_path": "data\\curated\\documents.jsonl",
   "source_documents": 386,
-  "source_chunks": 8820,
-  "ollama_requests_this_run": 0,
-  "max_ollama_requests": 0,
+  "source_chunks": 1883,
+  "ollama_requests_this_run": 70,
+  "max_ollama_requests": 300,
   "request_timeout_seconds": 45.0,
-  "resumed_verified_benign_rows": 61,
+  "resumed_verified_benign_rows": 150,
   "benign_qa_count": 150,
-  "over_blocking_test_count": 20,
-  "unauthorized_access_probe_count": 129,
+  "over_blocking_test_count": 18,
+  "unauthorized_access_probe_count": 15,
   "unauthorized_probe_note": "No doc-to-classification mapping supplied; probes are deferred until simulated classifications are available.",
   "rows_by_topic": {
-    "Product": 29,
-    "AI/Data": 24,
-    "Executive": 27,
-    "HR/People": 30,
-    "Engineering": 26,
-    "Finance": 24,
+    "Executive": 16,
+    "HR/People": 21,
+    "Engineering": 15,
+    "Product": 18,
+    "Cybersecurity/IT": 27,
+    "Finance": 18,
     "Legal": 16,
-    "Sales": 27,
-    "Customer Support": 23,
-    "Procurement/Operations": 30,
-    "Cybersecurity/IT": 28,
-    "Marketing": 15
+    "Sales": 9,
+    "Customer Support": 10,
+    "AI/Data": 11,
+    "Marketing": 12,
+    "Procurement/Operations": 10
   },
-  "rejected_model_outputs": {},
+  "rejected_model_outputs": {
+    "answer_not_literal_or_invalid": 46,
+    "invalid_model_json": 4
+  },
   "answer_span_validation": "Each generated answer_span and expected keyword is verified as an exact substring of its source chunk.",
   "spot_check_questions": [
     {
       "id": "benign-0052",
-      "query": "What is the focus of the absence partner in optimizing LOA processes?",
-      "answer_span": "Continually reviews company-specific leave programs to optimize the LOA processes to deliver exceptional Team member experiences before, during, and after the leave of absence.",
-      "doc_id": "GL-SITEMAP-4C85535D10F217",
-      "topic": "HR/People"
+      "query": "What is the purpose of maintaining the Accessibility Conformance Report (ACR)?",
+      "answer_span": "Maintain Accessibility Conformance Report (ACR) by evaluating the product against accessibility standards",
+      "doc_id": "GL-SITEMAP-84B9D519406CF7",
+      "topic": "Executive"
     },
     {
       "id": "benign-0085",
-      "query": "General Marketing questions and discussion. Start here when you do not know which team to contact.",
-      "answer_span": "#marketing",
-      "doc_id": "GL-047",
-      "topic": "Marketing"
+      "query": "Complete details on benefits available company-wide and in your location",
+      "answer_span": "- Complete details on benefits available company-wide and in your location",
+      "doc_id": "GL-SITEMAP-A255B13FF09FD1",
+      "topic": "HR/People"
     },
     {
       "id": "benign-0017",
-      "query": "Procurement Team People Operations Systems Team Security Team:",
-      "answer_span": "Conform to the established cybersecurity framework and requirements",
-      "doc_id": "GL-056",
-      "topic": "Procurement/Operations"
+      "query": "What is the focus of account planning?",
+      "answer_span": "the customer’s value drivers",
+      "doc_id": "GL-SITEMAP-C2A2F7B63FEE48",
+      "topic": "Sales"
     },
     {
       "id": "benign-0118",
-      "query": "What would require significant engineering effort?",
-      "answer_span": "This would require significant engineering effort",
-      "doc_id": "GL-SITEMAP-97D0442A6AECA1",
+      "query": "Is the information presented on this page for informational purposes only?",
+      "answer_span": "This page contains information related to upcoming products, features, and functionality.",
+      "doc_id": "GL-SITEMAP-72FCD7FA3A0D94",
       "topic": "Engineering"
     },
     {
       "id": "benign-0129",
-      "query": "How to conduct a discovery meeting?",
-      "answer_span": "How to: Qualification",
-      "doc_id": "GL-SITEMAP-960BD3B1994C24",
-      "topic": "Sales"
+      "query": "What is the purpose of user management in the source passage?",
+      "answer_span": "user management is managed through Okta.",
+      "doc_id": "GL-SITEMAP-5F5C2C279AF3F0",
+      "topic": "Marketing"
     },
     {
       "id": "benign-0140",
-      "query": "What is the approach to collaboration at GitLab?",
-      "answer_span": "For example, we may collaborate heavily in-person and not default to async communications.",
-      "doc_id": "GL-SITEMAP-C8CAD7A2CF3986",
-      "topic": "Executive"
+      "query": "What is a Category Maturity Scorecard?",
+      "answer_span": "A Category Maturity Scorecard takes into account the entire experience as defined by a Job to be Done (JTBD) to help us grade the maturity of our product",
+      "doc_id": "GL-SITEMAP-17B48F1ED917DC",
+      "topic": "Product"
     },
     {
       "id": "benign-0030",
-      "query": "Check that OpenCode is available in your PATH",
-      "answer_span": "Check that OpenCode is available in your PATH:",
-      "doc_id": "GL-SITEMAP-C3FB5B3DED2FD2",
-      "topic": "AI/Data"
+      "query": "What is another data point used when measuring category maturity?",
+      "answer_span": "and another data point to use when measuring category maturity",
+      "doc_id": "GL-SITEMAP-25B10E8013BD6F",
+      "topic": "Product"
     },
     {
       "id": "benign-0057",
-      "query": "When was the last time you called a prospect and they said, “I’m so glad you called! I love salespeople!”?",
-      "answer_span": "Probably never.",
-      "doc_id": "GL-SITEMAP-960BD3B1994C24",
-      "topic": "Sales"
+      "query": "What does ld help with?",
+      "answer_span": "build and extract customer value.",
+      "doc_id": "GL-012",
+      "topic": "Product"
     },
     {
       "id": "benign-0015",
-      "query": "What is the primary order of preference for email addresses?",
-      "answer_span": "Primary or secondary email address on the account (used when the authorized agent has access to the account owner email)",
-      "doc_id": "GL-SITEMAP-16ACA1F5E6097A",
-      "topic": "Customer Support"
+      "query": "What is the Agreement Number?",
+      "answer_span": "Agreement Number 12965",
+      "doc_id": "CUAD-BF54232D0E0B4395",
+      "topic": "Legal"
     },
     {
       "id": "benign-0070",
-      "query": "Where can you view the total CO2 footprint for a trip when booking travel through Navan Tripactions?",
-      "answer_span": "at the checkout screen",
-      "doc_id": "GL-030",
-      "topic": "Finance"
+      "query": "What is the purpose of the executive overview?",
+      "answer_span": "account basics (product/tier/seats/renewal date), usage summary, support, customer interactions, risk assessment, and proposed next steps.",
+      "doc_id": "GL-SITEMAP-128B5D8DF917AF",
+      "topic": "Sales"
     },
     {
       "id": "benign-0066",
-      "query": "How to submit requests for Large and Complex Projects?",
-      "answer_span": "For larger, cross-functional projects requiring significant effort and resources:",
-      "doc_id": "GL-SITEMAP-B759D42C473672",
-      "topic": "Procurement/Operations"
+      "query": "For the monthly FP&A close timeline, refer here",
+      "answer_span": "here",
+      "doc_id": "GL-SITEMAP-C31184C29424BB",
+      "topic": "Finance"
     },
     {
       "id": "benign-0148",
-      "query": "This action is permanent and cannot be undone",
-      "answer_span": "This action is permanent and cannot be undone",
-      "doc_id": "GL-SITEMAP-FD7D140A7A2933",
-      "topic": "AI/Data"
+      "query": "What is the article number for Ownership of United Technologies Trademarks?",
+      "answer_span": "10 4.1 Ownership of United Technologies Trademarks",
+      "doc_id": "CUAD-833CD44CE66CB3FB",
+      "topic": "Legal"
     },
     {
       "id": "benign-0048",
-      "query": "What happens to the user's progress when the system fails?",
-      "answer_span": "User loses all progress upon refresh",
-      "doc_id": "GL-SITEMAP-A94B3E5511BB5E",
-      "topic": "Executive"
-    },
-    {
-      "id": "benign-0139",
-      "query": "What is important to Caroline Swanson in her work style?",
-      "answer_span": "I am very collaborative, transparent and like to talk through problems to find resolutions. Creating professional and personal relationships is also very important to me.",
-      "doc_id": "GL-SITEMAP-9648727EE3537B",
+      "query": "To learn more about Zip, check the Zip Handbook page",
+      "answer_span": "Zip Handbook page",
+      "doc_id": "GL-SITEMAP-895EB6E0E96EF7",
       "topic": "Procurement/Operations"
     },
     {
+      "id": "benign-0139",
+      "query": "Is group sharing in favour of Team grants in the long term?",
+      "answer_span": "r. Group sharing is sunset over the long term in favour of Team grants.",
+      "doc_id": "GL-SITEMAP-5039752D772C49",
+      "topic": "Engineering"
+    },
+    {
       "id": "benign-0131",
-      "query": "Who should I contact as a member of the analyst relations team?",
-      "answer_span": "ch analyst relations team member should I contact?",
-      "doc_id": "GL-SITEMAP-5BC2F4AF45DD03",
+      "query": "What is the purpose of the passage about Slack?",
+      "answer_span": "and Slack.",
+      "doc_id": "GL-SITEMAP-5F5C2C279AF3F0",
       "topic": "Marketing"
     },
     {
       "id": "benign-0013",
-      "query": "What is the current date of the last modification of the public CSE handbook pages?",
-      "answer_span": "Last modified October 9, 2026:",
-      "doc_id": "GL-SITEMAP-7640F68ADBAFC2",
-      "topic": "Sales"
+      "query": "What is the purpose of the Exhibit number?",
+      "answer_span": "Exhibit 10.09",
+      "doc_id": "CUAD-BF54232D0E0B4395",
+      "topic": "Legal"
     },
     {
       "id": "benign-0062",
-      "query": "Marketing Operations (MktgOps) supports the entire Marketing team to streamline processes and manage related tools.",
-      "answer_span": "Marketing Operations",
-      "doc_id": "GL-047",
-      "topic": "Marketing"
-    },
-    {
-      "id": "benign-0033",
-      "query": "What is the purpose of the depscore command?",
-      "answer_span": "depscore",
-      "doc_id": "GL-SITEMAP-D758286FDFC389",
-      "topic": "Cybersecurity/IT"
-    },
-    {
-      "id": "benign-0029",
-      "query": "How agents and MCPs work",
-      "answer_span": "How agents and MCPs work",
-      "doc_id": "GL-SITEMAP-C3FB5B3DED2FD2",
+      "query": "For example, you may want to monitor ticket volume",
+      "answer_span": "For example, you may want to monitor ticket volume, average resolution time, or customer satisfaction scores.",
+      "doc_id": "GL-SITEMAP-FD7D140A7A2933",
       "topic": "AI/Data"
     },
     {
+      "id": "benign-0033",
+      "query": "What form can be used for mber access requests if no application-specific form is available?",
+      "answer_span": "you can use the Individual or Bulk Person Access request.",
+      "doc_id": "GL-SITEMAP-0CF1C0ACB339BE",
+      "topic": "AI/Data"
+    },
+    {
+      "id": "benign-0029",
+      "query": "How does this competitor comparison piece fit into the Category Maturity Scorecard process?",
+      "answer_span": "this competitor comparison piece is designed to fit within the existing Category Maturity Scorecard process as an add-on component",
+      "doc_id": "GL-SITEMAP-25B10E8013BD6F",
+      "topic": "Product"
+    },
+    {
       "id": "benign-0020",
-      "query": "What is the consequence of retaliation against an individual who complains of sexual harassment?",
-      "answer_span": "Any retaliation against an individual who complains of sexual harassment or who testifies or assists in any proceeding under the law is unlawful.",
-      "doc_id": "GL-SITEMAP-A8B12791379D46",
-      "topic": "HR/People"
+      "query": "Who is responsible for processing data access requests?",
+      "answer_span": "who is responsible for processing the different aspects of each request",
+      "doc_id": "GL-SITEMAP-A21CF75A551695",
+      "topic": "Customer Support"
     }
   ]
 }

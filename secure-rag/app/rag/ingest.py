@@ -46,29 +46,38 @@ def _load_canary_registry() -> Dict[str, str]:
         return json.load(f)
 
 
-def chunk_text(
+def chunk_text_with_offsets(
     text: str,
     chunk_size: int = None,
     chunk_overlap: int = None,
-) -> List[str]:
-    """
-    Simple recursive character-based chunker.
-    Tries to split on paragraph/sentence/word boundaries before hard-splitting.
-    """
+) -> List[tuple[int, int, str]]:
+    """Return index-compatible chunks with their source-text offsets."""
     chunk_size = chunk_size or settings.chunking_chunk_size
     overlap = chunk_overlap or settings.chunking_chunk_overlap
 
     if len(text) <= chunk_size:
-        return [text.strip()] if text.strip() else []
+        chunk = text.strip()
+        if not chunk:
+            return []
+        start = len(text) - len(text.lstrip())
+        return [(start, start + len(chunk), chunk)]
 
-    chunks: List[str] = []
+    chunks: List[tuple[int, int, str]] = []
     separators = ["\n\n", "\n", ". ", " "]
     start = 0
+
+    def append_chunk(chunk_start: int, chunk_end: int) -> None:
+        raw = text[chunk_start:chunk_end]
+        chunk = raw.strip()
+        if chunk:
+            leading = len(raw) - len(raw.lstrip())
+            trailing = len(raw.rstrip())
+            chunks.append((chunk_start + leading, chunk_start + trailing, chunk))
 
     while start < len(text):
         end = min(start + chunk_size, len(text))
         if end == len(text):
-            chunks.append(text[start:].strip())
+            append_chunk(start, end)
             break
 
         # Try to find a natural split point
@@ -79,12 +88,25 @@ def chunk_text(
                 split_at = idx + len(sep)
                 break
 
-        chunk = text[start:split_at].strip()
-        if chunk:
-            chunks.append(chunk)
+        append_chunk(start, split_at)
         start = split_at - overlap if split_at - overlap > start else split_at
 
-    return [c for c in chunks if c]
+    return chunks
+
+
+def chunk_text(
+    text: str,
+    chunk_size: int = None,
+    chunk_overlap: int = None,
+) -> List[str]:
+    """
+    Simple recursive character-based chunker.
+    Tries to split on paragraph/sentence/word boundaries before hard-splitting.
+    """
+    return [
+        chunk
+        for _, _, chunk in chunk_text_with_offsets(text, chunk_size, chunk_overlap)
+    ]
 
 
 def parse_doc_frontmatter(content: str) -> tuple[Dict[str, Any], str]:

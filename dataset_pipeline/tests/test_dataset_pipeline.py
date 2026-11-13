@@ -1,4 +1,5 @@
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -329,6 +330,29 @@ def test_benign_chunks_are_classified_and_unauthorized_probes_are_separate() -> 
     assert should_refuse[0]["classification"] == "Confidential"
     assert should_refuse[0]["department"] == "Finance"
     assert should_refuse[0]["unauthorized_department"] != "Finance"
+
+
+def test_benign_sources_match_the_index_chunker_and_document_chunk_cap() -> None:
+    secure_rag_root = ROOT.parent / "secure-rag"
+    if str(secure_rag_root) not in sys.path:
+        sys.path.insert(0, str(secure_rag_root))
+    from app.rag.ingest import chunk_text_with_offsets
+
+    text = " \n" + ("Repeated section text with a distinct marker. " * 100) + "\n "
+    expected = chunk_text_with_offsets(text.strip())[:5]
+    chunks = candidate_chunks([{
+        "document_id": "DOC-CHUNKED",
+        "metadata": {"department": "Engineering"},
+        "text": text,
+    }], seed=1)
+
+    indexed = sorted(chunks, key=lambda row: row["chunk_index"])
+    assert len(indexed) == 5
+    assert [row["text"] for row in indexed] == [chunk for _, _, chunk in expected]
+    assert all(
+        text[row["start_char"]:row["end_char"]] == row["text"]
+        for row in indexed
+    )
 
 
 def test_unauthorized_probe_generator_defers_until_mapping_exists(tmp_path: Path) -> None:

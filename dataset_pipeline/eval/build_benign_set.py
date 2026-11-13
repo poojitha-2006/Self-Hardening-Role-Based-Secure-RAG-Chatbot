@@ -21,8 +21,7 @@ OUTPUT_DEFAULT = ROOT / "data/benign/benign_queries.jsonl"
 REPORT_DEFAULT = ROOT / "data/benign/validation_report.json"
 MODEL_DEFAULT = "llama3.2:3b"
 OLLAMA_URL_DEFAULT = "http://127.0.0.1:11434/api/generate"
-CHUNK_SIZE = 900
-CHUNK_OVERLAP = 120
+INDEX_CHUNKS_PER_DOCUMENT = 5
 TARGET_BENIGN = 150
 OVERBLOCKING_TARGET = 20
 UNAUTHORIZED_TARGET = 30
@@ -71,24 +70,17 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def split_chunks(text: str) -> list[tuple[int, int, str]]:
-    text = text.strip()
-    chunks: list[tuple[int, int, str]] = []
-    start = 0
-    while start < len(text):
-        end = min(start + CHUNK_SIZE, len(text))
-        if end < len(text):
-            paragraph = text.rfind("\n\n", start + CHUNK_SIZE // 2, end)
-            space = text.rfind(" ", start + CHUNK_SIZE // 2, end)
-            boundary = max(paragraph, space)
-            if boundary > start:
-                end = boundary
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append((start, end, chunk))
-        if end >= len(text):
-            break
-        start = max(start + 1, end - CHUNK_OVERLAP)
-    return chunks
+    secure_rag_root = ROOT.parent / "secure-rag"
+    if str(secure_rag_root) not in sys.path:
+        sys.path.insert(0, str(secure_rag_root))
+    from app.rag.ingest import chunk_text_with_offsets
+
+    leading_whitespace = len(text) - len(text.lstrip())
+    normalized_text = text.strip()
+    return [
+        (start + leading_whitespace, end + leading_whitespace, chunk)
+        for start, end, chunk in chunk_text_with_offsets(normalized_text)
+    ][:INDEX_CHUNKS_PER_DOCUMENT]
 
 
 def simulated_access_metadata(document: dict[str, Any]) -> dict[str, Any]:
