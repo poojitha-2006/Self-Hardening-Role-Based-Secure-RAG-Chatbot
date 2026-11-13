@@ -15,7 +15,7 @@ llm:
 
 # --- Embedding Settings ---
 embeddings:
-  provider: sentence_transformers    # 'sentence_transformers' or 'ollama'
+  provider: ollama                   # use one Ollama model for ingestion and query embeddings
   model: all-MiniLM-L6-v2           # sentence-transformers model name
   ollama_model: nomic-embed-text     # used when provider = ollama
   device: cpu                        # 'cpu' or 'cuda'

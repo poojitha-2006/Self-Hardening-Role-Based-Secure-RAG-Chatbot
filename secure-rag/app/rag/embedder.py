@@ -95,11 +95,8 @@ class OllamaEmbedder(BaseEmbedder):
         logger.info("Embedder ready: dim=%d", self.dim)
 
     def embed(self, texts: List[str]) -> List[List[float]]:
-        results = []
-        for text in texts:
-            resp = self._client.embeddings(model=self._model, prompt=text)
-            results.append(resp["embedding"])
-        return results
+        response = self._client.embed(model=self._model, input=texts)
+        return response["embeddings"]
 
 
 @lru_cache(maxsize=1)
