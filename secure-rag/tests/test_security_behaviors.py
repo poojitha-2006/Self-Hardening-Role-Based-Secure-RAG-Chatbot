@@ -650,7 +650,8 @@ def test_attack_dataset_loader_reads_jsonl_splits_and_legacy_source() -> None:
     assert all(attack["split"] == "train" for attack in train)
     assert all(attack["split"] == "validation" for attack in validation)
     assert all(attack["split"] == "test" for attack in test)
-    assert len([attack for attack in attacks if attack.get("source") == "legacy_handwritten"]) == 65
+    # 19 legacy attacks were trimmed from train by the 300-row public-data budget.
+    assert len([attack for attack in attacks if attack.get("source") == "legacy_handwritten"]) == 46
     assert not (set(attack["text"] for attack in test) & set(attack["text"] for attack in train))
 
 

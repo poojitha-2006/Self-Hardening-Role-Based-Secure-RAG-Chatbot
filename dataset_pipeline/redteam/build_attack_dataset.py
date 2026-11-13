@@ -26,7 +26,11 @@ CATEGORY_ORDER = (
 )
 REMOTE_SOURCES = {
     "Tensor Trust": {"split": "train", "search": ("tensor trust",), "exact": ()},
-    "Gandalf (Lakera)": {"split": "train", "search": ("gandalf lakera",), "exact": ()},
+    "Gandalf (Lakera)": {
+        "split": "train",
+        "search": ("gandalf lakera",),
+        "exact": ("Lakera/gandalf_ignore_instructions",),
+    },
     "deepset/prompt-injections": {"split": "validation", "search": (), "exact": ("deepset/prompt-injections",)},
     "HackAPrompt": {"split": "test", "search": ("hackaprompt", "hack a prompt"), "exact": ()},
     "BIPIA": {"split": "test", "search": ("BIPIA indirect prompt injection",), "exact": ()},

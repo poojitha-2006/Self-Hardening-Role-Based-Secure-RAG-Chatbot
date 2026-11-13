@@ -255,6 +255,7 @@ def test_attack_handwritten_set_is_synthetic_and_source_split_is_fixed() -> None
     expected_splits = {"Tensor Trust": "train", "Gandalf (Lakera)": "train",
                        "deepset/prompt-injections": "validation", "HackAPrompt": "test", "BIPIA": "test"}
     assert {source: config["split"] for source, config in REMOTE_SOURCES.items()} == expected_splits
+    assert REMOTE_SOURCES["Gandalf (Lakera)"]["exact"] == ("Lakera/gandalf_ignore_instructions",)
 
 
 def test_direct_request_attacks_cover_secret_facts_without_split_wording_leakage() -> None:
