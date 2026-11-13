@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-12T14:17:00+00:00",
+  "generated_at": "2026-11-13T05:47:32+00:00",
   "seed": 20261018,
   "budgets": {
     "train": 300,
@@ -9,23 +9,29 @@
   "sources": {
     "Tensor Trust": {
       "status": "unavailable",
-      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
+      "repo_id": "qxcv/tensor-trust",
+      "reason": "Dataset card does not declare a license; skipped."
     },
     "Gandalf (Lakera)": {
-      "status": "unavailable",
-      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
+      "status": "downloaded",
+      "repo_id": "Lakera/gandalf_ignore_instructions",
+      "license": "mit",
+      "records_normalized": 999
     },
     "deepset/prompt-injections": {
-      "status": "unavailable",
-      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
+      "status": "downloaded",
+      "repo_id": "deepset/prompt-injections",
+      "license": "apache-2.0",
+      "records_normalized": 660
     },
     "HackAPrompt": {
       "status": "unavailable",
-      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
+      "repo_id": "hackaprompt/hackaprompt-dataset",
+      "reason": "DatasetNotFoundError: Dataset 'hackaprompt/hackaprompt-dataset' is a gated dataset on the Hub. Visit the dataset page at https://huggingface.co/datasets/hackaprompt/hackaprompt-dataset to ask for access."
     },
     "BIPIA": {
       "status": "unavailable",
-      "reason": "Could not import optional dependency 'lib': DLL load failed while importing lib: An Application Control policy has blocked this file."
+      "reason": "No matching Hugging Face dataset found by public search."
     }
   },
   "network_access_authorized": true,
@@ -37,16 +43,19 @@
     "test_removed": 0
   },
   "split_counts": {
-    "train": 121,
-    "validation": 0,
+    "train": 300,
+    "validation": 100,
     "test": 34
   },
   "counts_by_source": {
     "train": {
-      "handwritten": 75,
-      "legacy_handwritten": 46
+      "Gandalf (Lakera)": 206,
+      "handwritten": 67,
+      "legacy_handwritten": 27
     },
-    "validation": {},
+    "validation": {
+      "deepset/prompt-injections": 100
+    },
     "test": {
       "handwritten": 15,
       "legacy_handwritten": 19
@@ -54,15 +63,21 @@
   },
   "counts_by_category": {
     "train": {
+      "direct_prompt_injection": 167,
+      "exfiltration_obfuscation": 45,
+      "jailbreak_roleplay": 20,
+      "role_escalation": 15,
+      "indirect_injection": 26,
       "direct_request": 15,
-      "direct_prompt_injection": 31,
-      "jailbreak_roleplay": 11,
-      "role_escalation": 14,
-      "system_prompt_secret_extraction": 12,
-      "indirect_injection": 24,
-      "exfiltration_obfuscation": 14
+      "system_prompt_secret_extraction": 12
     },
-    "validation": {},
+    "validation": {
+      "direct_prompt_injection": 73,
+      "role_escalation": 8,
+      "exfiltration_obfuscation": 3,
+      "jailbreak_roleplay": 7,
+      "indirect_injection": 9
+    },
     "test": {
       "direct_request": 15,
       "role_escalation": 2,
@@ -77,14 +92,16 @@
     "legacy_handwritten"
   ],
   "license_attribution": {
+    "Gandalf (Lakera)": "mit",
     "handwritten": "Original synthetic direct-request test prompt, created for this project",
-    "legacy_handwritten": "Original handwritten attacks from this project"
+    "legacy_handwritten": "Original handwritten attacks from this project",
+    "deepset/prompt-injections": "apache-2.0"
   },
   "handwritten_attack_count": 90,
   "legacy_handwritten_attack_count": 65,
   "shortfalls": {
-    "train": 179,
-    "validation": 100,
+    "train": 0,
+    "validation": 0,
     "test": 266
   },
   "source_split_policy": {
