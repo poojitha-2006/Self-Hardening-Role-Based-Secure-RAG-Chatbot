@@ -51,6 +51,8 @@ OVERBLOCKING_TOPICS = [
     ("customer", "What customer-support guidance appears in this public source?"),
     ("policy", "What does this public policy say about its scope?"),
     ("reporting", "How does this public guidance explain reporting a concern?"),
+    ("firewall", "What infrastructure guidance mentions firewall rules?"),
+    ("security review", "What does this security review flow do?"),
 ]
 
 
