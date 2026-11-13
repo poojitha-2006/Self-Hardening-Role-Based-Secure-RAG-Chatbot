@@ -62,6 +62,7 @@ _ROLE_CREDENTIALS = {
     "Manager": ("bob", "password"),
     "Administrator": ("alice", "password"),
 }
+_ATTACK_SPLITS = ("train", "validation", "test")
 
 
 def _load_benign_queries() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -88,6 +89,90 @@ def _load_benign_queries() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     if not authorized or not should_be_refused:
         raise ValueError("Benign dataset requires both authorized and should-be-refused queries")
     return authorized, should_be_refused
+
+
+def _sample_attack_splits(
+    attacks: List[Dict[str, Any]],
+    max_attacks: int,
+    rng: random.Random,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    if max_attacks <= 0:
+        raise ValueError("max_attacks must be a positive integer")
+
+    by_split = {split: [] for split in _ATTACK_SPLITS}
+    for attack in attacks:
+        split = attack.get("split")
+        if split not in by_split:
+            raise ValueError(f"Attack has unsupported split: {split!r}")
+        by_split[split].append(attack)
+
+    available_splits = [split for split in _ATTACK_SPLITS if by_split[split]]
+    target = min(max_attacks, sum(len(rows) for rows in by_split.values()))
+    if target < len(available_splits):
+        raise ValueError(
+            f"max_attacks must be at least {len(available_splits)} to sample "
+            "from every available split"
+        )
+
+    counts = {split: 0 for split in _ATTACK_SPLITS}
+    remaining = target
+    while remaining:
+        for split in _ATTACK_SPLITS:
+            if remaining and counts[split] < len(by_split[split]):
+                counts[split] += 1
+                remaining -= 1
+
+    sampled = []
+    for split in _ATTACK_SPLITS:
+        sampled.extend(rng.sample(by_split[split], counts[split]))
+    return sampled, counts
+
+
+def _sample_rows(
+    rows: List[Dict[str, Any]],
+    max_rows: int,
+    rng: random.Random,
+) -> List[Dict[str, Any]]:
+    if max_rows <= 0:
+        raise ValueError("sample size must be a positive integer")
+    return rng.sample(rows, min(max_rows, len(rows)))
+
+
+def _record_round_sample_sizes(
+    metrics: Dict[str, Any],
+    elapsed_seconds: float,
+    attack_counts: Dict[str, int],
+    train_store_candidates: int,
+    authorized_benign_count: int,
+    refusal_probe_count: int,
+) -> None:
+    metrics.update({
+        "elapsed_time_seconds": round(elapsed_seconds, 6),
+        "sampled_attack_count": sum(attack_counts.values()),
+        "sampled_train_attack_count": attack_counts["train"],
+        "sampled_validation_attack_count": attack_counts["validation"],
+        "sampled_test_attack_count": attack_counts["test"],
+        "train_attack_store_candidate_count": train_store_candidates,
+        "sampled_authorized_benign_count": authorized_benign_count,
+        "sampled_should_be_refused_count": refusal_probe_count,
+    })
+
+
+def _print_sample_sizes(
+    attack_counts: Dict[str, int],
+    train_store_candidates: int,
+    authorized_benign_count: int,
+    refusal_probe_count: int,
+) -> None:
+    print(
+        "Sample sizes: "
+        f"scored attacks={sum(attack_counts.values())} "
+        f"(train={attack_counts['train']}, validation={attack_counts['validation']}, "
+        f"test={attack_counts['test']}); "
+        f"train store candidates={train_store_candidates}; "
+        f"authorized benign={authorized_benign_count}; "
+        f"refusal probes={refusal_probe_count}"
+    )
 
 
 def _run_attacks(
@@ -529,23 +614,59 @@ def _write_diagnostics(
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
+def _run_smoke_experiment(
+    output_dir: Path,
+    seed: int,
+    max_attacks: int = None,
+    max_benign: int = None,
+) -> List[Dict[str, Any]]:
     all_attacks = load_attack_dataset()
     authorized_benign, should_be_refused = _load_benign_queries()
 
     train_attacks = [attack for attack in all_attacks if attack.get("split") == "train"]
     test_attacks = [attack for attack in all_attacks if attack.get("split") == "test"]
-    if len(test_attacks) < 10 or len(authorized_benign) < 10 or len(should_be_refused) < 10 or not train_attacks:
+    if not train_attacks or not test_attacks or not authorized_benign or not should_be_refused:
         raise ValueError(
-            "Smoke run requires at least 10 held-out attacks, 10 authorized queries, "
-            "10 refusal probes, and one training attack."
+            "Smoke run requires training attacks, held-out attacks, authorized queries, "
+            "and refusal probes."
         )
 
     rng = random.Random(seed)
-    smoke_attacks = rng.sample(test_attacks, 10)
-    smoke_benign = rng.sample(authorized_benign, 10)
-    smoke_refusals = rng.sample(should_be_refused, 10)
-    held_out_texts = {attack["text"] for attack in test_attacks}
+    if max_attacks is None:
+        if len(test_attacks) < 10:
+            raise ValueError("Smoke run requires at least 10 held-out attacks without --max-attacks.")
+        smoke_attacks = rng.sample(test_attacks, 10)
+        attack_counts = {"train": 0, "validation": 0, "test": len(smoke_attacks)}
+        training_sample = train_attacks[:10]
+    else:
+        smoke_attacks, attack_counts = _sample_attack_splits(all_attacks, max_attacks, rng)
+        training_sample = [
+            attack for attack in smoke_attacks if attack.get("split") == "train"
+        ]
+
+    benign_limit = 10 if max_benign is None else min(max_benign, 10)
+    if benign_limit <= 0:
+        raise ValueError("max_benign must be a positive integer")
+    if max_benign is None and (
+        len(authorized_benign) < 10 or len(should_be_refused) < 10
+    ):
+        raise ValueError(
+            "Smoke run requires at least 10 authorized queries and 10 refusal probes "
+            "without --max-benign."
+        )
+    smoke_benign = _sample_rows(authorized_benign, benign_limit, rng)
+    smoke_refusals = _sample_rows(should_be_refused, benign_limit, rng)
+    held_out_texts = {
+        attack["text"]
+        for attack in all_attacks
+        if attack.get("split") in {"validation", "test"}
+    }
+    _print_sample_sizes(
+        attack_counts,
+        len(training_sample),
+        len(smoke_benign),
+        len(smoke_refusals),
+    )
 
     from app.store.attack_store import get_attack_store
 
@@ -564,7 +685,6 @@ def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
     diagnostic_rounds: List[Dict[str, Any]] = []
     for mode in ("none", "static", "adaptive"):
         if mode == "adaptive":
-            training_sample = train_attacks[:10]
             training_results = _run_attacks(training_sample)
             successful_ids = {
                 result["attack_id"] for result in training_results if result["success"]
@@ -579,13 +699,22 @@ def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
                     f"Expected to store {len(successful_ids)} successful training attacks, stored {stored}."
                 )
             if any(item["document"] in held_out_texts for item in store.get_all()):
-                raise RuntimeError("Held-out test text entered the known-attacks store.")
+                raise RuntimeError("Held-out validation/test text entered the known-attacks store.")
 
+        round_started = time.perf_counter()
         metrics, diagnostic_groups = _run_smoke_round(
             smoke_attacks,
             smoke_benign,
             smoke_refusals,
             mode,
+        )
+        _record_round_sample_sizes(
+            metrics,
+            time.perf_counter() - round_started,
+            attack_counts,
+            len(training_sample),
+            len(smoke_benign),
+            len(smoke_refusals),
         )
         results.append(metrics)
         diagnostic_rounds.append({
@@ -594,13 +723,14 @@ def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
             **diagnostic_groups,
         })
         logger.info(
-            "Smoke round %d (%s): ASR=%.1f%% FPR=%.1f%% authorized_accuracy=%.1f%% unauthorized_refusal=%.1f%%",
+            "Smoke round %d (%s): ASR=%.1f%% FPR=%.1f%% authorized_accuracy=%.1f%% unauthorized_refusal=%.1f%% elapsed=%.2fs",
             metrics["round"],
             mode,
             metrics["asr"] * 100,
             metrics["fpr"] * 100,
             metrics["answer_accuracy"] * 100,
             metrics["unauthorized_refusal_rate"] * 100,
+            metrics["elapsed_time_seconds"],
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -613,6 +743,8 @@ def _run_smoke_experiment(output_dir: Path, seed: int) -> List[Dict[str, Any]]:
             {
                 "seed": seed,
                 "attack_count": len(smoke_attacks),
+                "attack_counts_by_split": attack_counts,
+                "train_attack_store_candidate_count": len(training_sample),
                 "authorized_benign_count": len(smoke_benign),
                 "should_be_refused_count": len(smoke_refusals),
                 "held_out_test_text_in_known_attacks": False,
@@ -657,6 +789,8 @@ def run_experiment(
     seeds: List[int] = None,
     output_dir: Path = None,
     smoke: bool = False,
+    max_attacks: int = None,
+    max_benign: int = None,
 ) -> None:
     """
     Run the full experiment protocol and save results.
@@ -667,6 +801,10 @@ def run_experiment(
     """
     rounds = rounds or settings.eval_rounds
     seeds = seeds or settings.eval_seeds
+    if max_attacks is not None and max_attacks <= 0:
+        raise ValueError("max_attacks must be a positive integer")
+    if max_benign is not None and max_benign <= 0:
+        raise ValueError("max_benign must be a positive integer")
     output_dir = output_dir or _RESULTS_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -674,7 +812,12 @@ def run_experiment(
 
     if smoke:
         smoke_seed = (seeds or settings.eval_seeds)[0]
-        smoke_metrics = _run_smoke_experiment(output_dir, smoke_seed)
+        smoke_metrics = _run_smoke_experiment(
+            output_dir,
+            smoke_seed,
+            max_attacks=max_attacks,
+            max_benign=max_benign,
+        )
         print("\nSMOKE EXPERIMENT METRICS")
         for metrics in smoke_metrics:
             mean_latency = (
@@ -697,13 +840,13 @@ def run_experiment(
 
     benign_queries, refusal_queries = _load_benign_queries()
 
-    # Split attacks: train (seed attack store) / test (held-out evaluation)
-    train_attacks = [a for a in all_attacks if a.get("split") == "train"]
-    test_attacks = [a for a in all_attacks if a.get("split") == "test"]
+    # Split attacks: train seeds the store; validation and test remain held out.
+    all_train_attacks = [a for a in all_attacks if a.get("split") == "train"]
+    all_test_attacks = [a for a in all_attacks if a.get("split") == "test"]
 
     logger.info(
         "Dataset: %d train attacks, %d test attacks (held-out), %d authorized benign queries, %d refusal probes",
-        len(train_attacks), len(test_attacks), len(benign_queries), len(refusal_queries),
+        len(all_train_attacks), len(all_test_attacks), len(benign_queries), len(refusal_queries),
     )
     from app.store.attack_store import get_attack_store
 
@@ -711,52 +854,107 @@ def run_experiment(
     removed_legacy = attack_store.remove_nontraining_attacks()
     if removed_legacy:
         logger.info("Removed %d non-TRAIN entries from attack store", removed_legacy)
-    held_out_texts = {attack["text"] for attack in test_attacks}
+    held_out_texts = {
+        attack["text"]
+        for attack in all_attacks
+        if attack.get("split") in {"validation", "test"}
+    }
 
     all_round_metrics = []
     experiment_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     for seed in seeds[:1]:  # Run with first seed for now (multi-seed adds time)
         logger.info("=== Running experiment with seed=%d ===", seed)
+        rng = random.Random(seed)
+        if max_attacks is None:
+            train_attacks = all_train_attacks
+            evaluation_attacks = all_test_attacks
+            attack_counts = {
+                "train": 0,
+                "validation": 0,
+                "test": len(evaluation_attacks),
+            }
+        else:
+            evaluation_attacks, attack_counts = _sample_attack_splits(
+                all_attacks,
+                max_attacks,
+                rng,
+            )
+            train_attacks = [
+                attack for attack in evaluation_attacks if attack.get("split") == "train"
+            ]
+
+        if max_benign is None:
+            sampled_benign = benign_queries
+            sampled_refusals = refusal_queries
+        else:
+            sampled_benign = _sample_rows(benign_queries, max_benign, rng)
+            sampled_refusals = _sample_rows(refusal_queries, max_benign, rng)
+        _print_sample_sizes(
+            attack_counts,
+            len(train_attacks),
+            len(sampled_benign),
+            len(sampled_refusals),
+        )
 
         # ── Round 0: No guardrails ────────────────────────────────────────────
+        round_started = time.perf_counter()
         logger.info("Round 0: No guardrails (baseline)")
         _set_guardrail_mode("none")
-        attack_results_0 = _run_attacks(test_attacks)
-        benign_results_0 = _run_benign(benign_queries)
-        refusal_results_0 = _run_benign(refusal_queries, should_be_refused=True)
+        attack_results_0 = _run_attacks(evaluation_attacks)
+        benign_results_0 = _run_benign(sampled_benign)
+        refusal_results_0 = _run_benign(sampled_refusals, should_be_refused=True)
         metrics_0 = compute_all_metrics(
             attack_results_0, benign_results_0,
             unauthorized_results=refusal_results_0,
             attack_store_size=0, round_number=0, guardrail_mode="none"
         )
+        _record_round_sample_sizes(
+            metrics_0,
+            time.perf_counter() - round_started,
+            attack_counts,
+            len(train_attacks),
+            len(sampled_benign),
+            len(sampled_refusals),
+        )
         all_round_metrics.append(metrics_0)
         logger.info(
-            "Round 0: ASR=%.1f%% FPR=%.1f%% authorized_accuracy=%.1f%% unauthorized_refusal=%.1f%%",
+            "Round 0: ASR=%.1f%% FPR=%.1f%% authorized_accuracy=%.1f%% unauthorized_refusal=%.1f%% elapsed=%.2fs",
             metrics_0["asr"] * 100,
             metrics_0["fpr"] * 100,
             metrics_0["authorized_answer_accuracy"] * 100,
             metrics_0["unauthorized_refusal_rate"] * 100,
+            metrics_0["elapsed_time_seconds"],
         )
 
         # ── Round 1: Static guardrails ────────────────────────────────────────
+        round_started = time.perf_counter()
         logger.info("Round 1: Static guardrails only")
         _set_guardrail_mode("static")
-        attack_results_1 = _run_attacks(test_attacks)
-        benign_results_1 = _run_benign(benign_queries)
-        refusal_results_1 = _run_benign(refusal_queries, should_be_refused=True)
+        attack_results_1 = _run_attacks(evaluation_attacks)
+        benign_results_1 = _run_benign(sampled_benign)
+        refusal_results_1 = _run_benign(sampled_refusals, should_be_refused=True)
         metrics_1 = compute_all_metrics(
             attack_results_1, benign_results_1,
             unauthorized_results=refusal_results_1,
             attack_store_size=0, round_number=1, guardrail_mode="static"
         )
+        _record_round_sample_sizes(
+            metrics_1,
+            time.perf_counter() - round_started,
+            attack_counts,
+            len(train_attacks),
+            len(sampled_benign),
+            len(sampled_refusals),
+        )
         all_round_metrics.append(metrics_1)
         logger.info(
-            "Round 1: ASR=%.1f%% FPR=%.1f%% authorized_accuracy=%.1f%% unauthorized_refusal=%.1f%%",
+            "Round 1: ASR=%.1f%% FPR=%.1f%% authorized_accuracy=%.1f%% unauthorized_refusal=%.1f%% elapsed=%.2fs",
             metrics_1["asr"] * 100,
             metrics_1["fpr"] * 100,
             metrics_1["authorized_answer_accuracy"] * 100,
             metrics_1["unauthorized_refusal_rate"] * 100,
+            metrics_1["elapsed_time_seconds"],
         )
 
         # Evaluate TRAIN attacks first; only successful ones become known attacks.
@@ -773,15 +971,16 @@ def run_experiment(
         stored_count = _store_train_attacks(successful_train_attacks)
         logger.info("Stored %d successful TRAIN attacks in attack store", stored_count)
         if any(item["document"] in held_out_texts for item in attack_store.get_all()):
-            raise RuntimeError("Held-out TEST text entered the known-attacks store.")
+            raise RuntimeError("Held-out VALIDATION/TEST text entered the known-attacks store.")
         _set_guardrail_mode("adaptive")
 
         # ── Rounds 2..N: Adaptive ─────────────────────────────────────────────
         for round_num in range(2, rounds + 1):
+            round_started = time.perf_counter()
             logger.info("Round %d: Adaptive guardrails", round_num)
-            attack_results = _run_attacks(test_attacks)
-            benign_results = _run_benign(benign_queries)
-            refusal_results = _run_benign(refusal_queries, should_be_refused=True)
+            attack_results = _run_attacks(evaluation_attacks)
+            benign_results = _run_benign(sampled_benign)
+            refusal_results = _run_benign(sampled_refusals, should_be_refused=True)
             store_size = _get_attack_store_size()
 
             metrics = compute_all_metrics(
@@ -791,14 +990,23 @@ def run_experiment(
                 round_number=round_num,
                 guardrail_mode="adaptive",
             )
+            _record_round_sample_sizes(
+                metrics,
+                time.perf_counter() - round_started,
+                attack_counts,
+                len(train_attacks),
+                len(sampled_benign),
+                len(sampled_refusals),
+            )
             all_round_metrics.append(metrics)
             logger.info(
-                "Round %d: ASR=%.1f%% FPR=%.1f%% unauthorized_refusal=%.1f%% StoreSize=%d",
+                "Round %d: ASR=%.1f%% FPR=%.1f%% unauthorized_refusal=%.1f%% StoreSize=%d elapsed=%.2fs",
                 round_num,
                 metrics["asr"] * 100,
                 metrics["fpr"] * 100,
                 metrics["unauthorized_refusal_rate"] * 100,
                 store_size,
+                metrics["elapsed_time_seconds"],
             )
 
     # ── Save results ──────────────────────────────────────────────────────────
@@ -924,14 +1132,32 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run Secure RAG evaluation.")
-    parser.add_argument("--smoke", action="store_true", help="Run 10 attacks and 10 benign queries.")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Run smoke rounds with 10 attacks and 10 queries per benign group by default.",
+    )
     parser.add_argument("--rounds", type=int, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--max-attacks",
+        type=int,
+        default=None,
+        help="Maximum attacks to sample evenly across train, validation, and test (at least 3).",
+    )
+    parser.add_argument(
+        "--max-benign",
+        type=int,
+        default=None,
+        help="Maximum authorized benign queries and refusal probes to sample per group.",
+    )
     args = parser.parse_args()
     run_experiment(
         rounds=args.rounds,
         seeds=[args.seed] if args.seed is not None else None,
         output_dir=args.output_dir,
         smoke=args.smoke,
+        max_attacks=args.max_attacks,
+        max_benign=args.max_benign,
     )

@@ -85,7 +85,9 @@ With the index built and Ollama running, execute from `secure-rag/`:
 python -m eval.run_experiment --smoke --seed 42
 ```
 
-The smoke mode samples 10 attacks from the chatbot's held-out test split and 10 benign queries, runs baseline/static/adaptive rounds, and checks that exact held-out attack text is not in the known-attacks store. It writes JSON and CSV results, plots, and a Markdown report under `secure-rag/eval/results/` by default. This is a small wiring check, **not** the full experiment.
+Without limits, smoke mode samples 10 attacks from the chatbot's held-out test split, 10 authorized benign queries, and 10 refusal probes; it runs baseline/static/adaptive rounds and checks that held-out attack text is not in the known-attacks store. Capped smoke runs honor the requested limits. It writes JSON and CSV results, plots, and a Markdown report under `secure-rag/eval/results/` by default. This is a small wiring check, **not** the full experiment.
+
+For bounded runs, `--max-attacks N` deterministically samples up to N attacks evenly across train, validation, and test (at least 3 when all splits are populated); that same sample is scored in each round, while only successful TRAIN attacks seed the store. `--max-benign N` caps authorized benign questions and refusal probes at N each. Both options use `--seed`; selected sample sizes and per-round elapsed seconds are included in results.
 
 The full evaluation is intentionally not documented as validated here. Do not infer full-experiment quality from smoke results.
 

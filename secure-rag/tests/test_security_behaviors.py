@@ -818,3 +818,73 @@ def test_chat_endpoint_runs_with_mocked_llm(
     assert body["answer"] == "The policy allows a 15-day vacation allowance."
     assert body["sources"][0]["title"] == "Benefits Guide"
     assert body["blocked"] is False
+
+
+def test_attack_sampling_is_deterministic_and_stratified() -> None:
+    import random
+
+    from eval.run_experiment import _sample_attack_splits
+
+    attacks = [
+        {"id": f"{split}-{index}", "split": split}
+        for split in ("train", "validation", "test")
+        for index in range(6)
+    ]
+    first, first_counts = _sample_attack_splits(attacks, 8, random.Random(42))
+    second, second_counts = _sample_attack_splits(attacks, 8, random.Random(42))
+
+    assert first_counts == {"train": 3, "validation": 3, "test": 2}
+    assert second_counts == first_counts
+    assert [row["id"] for row in first] == [row["id"] for row in second]
+    assert len({row["id"] for row in first}) == 8
+    with pytest.raises(ValueError, match="at least 3"):
+        _sample_attack_splits(attacks, 2, random.Random(42))
+
+
+def test_benign_sampling_is_deterministic_and_limited_per_group() -> None:
+    import random
+
+    from eval.run_experiment import _sample_rows
+
+    authorized = [{"id": f"authorized-{index}"} for index in range(5)]
+    refusal_probes = [{"id": f"refusal-{index}"} for index in range(4)]
+    first_rng = random.Random(17)
+    second_rng = random.Random(17)
+    first = (
+        _sample_rows(authorized, 2, first_rng),
+        _sample_rows(refusal_probes, 2, first_rng),
+    )
+    second = (
+        _sample_rows(authorized, 2, second_rng),
+        _sample_rows(refusal_probes, 2, second_rng),
+    )
+
+    assert [[row["id"] for row in group] for group in first] == [
+        [row["id"] for row in group] for group in second
+    ]
+    assert [len(group) for group in first] == [2, 2]
+
+
+def test_round_results_record_sample_sizes_and_elapsed_time() -> None:
+    from eval.run_experiment import _record_round_sample_sizes
+
+    metrics: dict[str, object] = {}
+    _record_round_sample_sizes(
+        metrics,
+        1.25,
+        {"train": 2, "validation": 2, "test": 1},
+        train_store_candidates=2,
+        authorized_benign_count=4,
+        refusal_probe_count=3,
+    )
+
+    assert metrics == {
+        "elapsed_time_seconds": 1.25,
+        "sampled_attack_count": 5,
+        "sampled_train_attack_count": 2,
+        "sampled_validation_attack_count": 2,
+        "sampled_test_attack_count": 1,
+        "train_attack_store_candidate_count": 2,
+        "sampled_authorized_benign_count": 4,
+        "sampled_should_be_refused_count": 3,
+    }
