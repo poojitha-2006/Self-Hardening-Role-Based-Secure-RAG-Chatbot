@@ -26,6 +26,7 @@ class LoginResponse(BaseModel):
     username: str
     department: Optional[str] = ""
     display_role: Optional[str] = ""
+    full_name: Optional[str] = ""
 
 
 class TokenData(BaseModel):

@@ -20,8 +20,10 @@ Can be called from:
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
@@ -37,11 +39,11 @@ logger = logging.getLogger(__name__)
 _API_BASE = "http://localhost:8000"
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
-# Seeded user credentials for each role
+# Seeded users used by the local red-team runner.
 _ROLE_CREDENTIALS = {
-    "Analyst": ("carol", "password"),
-    "Manager": ("bob", "password"),
-    "Administrator": ("alice", "password"),
+    "Analyst": "carol",
+    "Manager": "bob",
+    "Administrator": "alice",
 }
 _ROLE_DEPARTMENTS = {
     "Analyst": "Analytics",
@@ -61,20 +63,46 @@ def _validate_local_target(base_url: str) -> None:
         raise ValueError("The red-team runner is restricted to localhost targets.")
 
 
-def _login(role: str, base_url: str = _API_BASE) -> Optional[str]:
-    """Obtain a JWT token for the given role."""
-    username, password = _ROLE_CREDENTIALS.get(role, ("carol", "password"))
+def _load_demo_credentials() -> Dict[str, str]:
+    path = Path(
+        os.environ.get(
+            "SECURE_RAG_DEMO_CREDENTIALS_FILE",
+            Path(__file__).resolve().parents[1] / "docs" / "DEMO_CREDENTIALS.md",
+        )
+    )
+    if not path.is_file():
+        raise FileNotFoundError(
+            "Local demo credentials are unavailable; create secure-rag/docs/DEMO_CREDENTIALS.md."
+        )
+    credentials = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        columns = [column.strip() for column in line.strip("|").split("|")]
+        if len(columns) == 2 and columns[0].lower() != "username" and set(columns[0]) != {"-"}:
+            credentials[columns[0]] = columns[1]
+    if not credentials:
+        raise ValueError(f"No demo credentials found in {path}.")
+    return credentials
+
+
+def _login(role: str, base_url: str = _API_BASE) -> str:
+    """Obtain a JWT using the ignored local credentials document."""
+    username = _ROLE_CREDENTIALS.get(role, _ROLE_CREDENTIALS["Analyst"])
+    password = _load_demo_credentials().get(username)
+    if not password:
+        raise ValueError(f"No local demo password is configured for {username}.")
     try:
         resp = httpx.post(
             f"{base_url}/login",
             json={"username": username, "password": password},
             timeout=10,
         )
-        resp.raise_for_status()
-        return resp.json()["access_token"]
-    except Exception as e:
-        logger.error("Login failed for role=%s: %s", role, e)
-        return None
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Could not connect to the authentication API for role={role}.") from exc
+    if resp.status_code != 200:
+        raise RuntimeError(f"Authentication API rejected role={role} (HTTP {resp.status_code}).")
+    return resp.json()["access_token"]
 
 
 def _send_attack(
@@ -213,17 +241,6 @@ def run_redteam_round(
 
     # Login as attacker
     token = _login(attacker_role, base_url)
-    if not token:
-        logger.error("Could not obtain token for role=%s", attacker_role)
-        return RedTeamReport(
-            round_number=round_number,
-            total_attacks=0,
-            successful_attacks=0,
-            attack_success_rate=0.0,
-            results=[],
-            new_attacks_stored=0,
-            attack_store_size=0,
-        )
 
     results: List[RedTeamResult] = []
     successful_attacks = 0

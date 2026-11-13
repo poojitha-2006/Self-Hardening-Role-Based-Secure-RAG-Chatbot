@@ -17,6 +17,7 @@ ENV/
 **/.env
 *.pem
 *.key
+secure-rag/docs/DEMO_CREDENTIALS.md
 
 # Large raw & intermediate datasets (read-only raw and processed remain local)
 **/data/raw/

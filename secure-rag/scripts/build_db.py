@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -31,12 +32,40 @@ DB_PATH = DB_DIR / "rag_access.db"
 SCHEMA_PATH = DB_DIR / "schema.sql"
 CURATED_DOCS_PATH = WORKSPACE_ROOT / "dataset_pipeline" / "data" / "curated" / "documents.jsonl"
 EMPLOYEES_PATH = WORKSPACE_ROOT / "dataset_pipeline" / "data" / "employees.json"
+CREDENTIALS_PATH = ROOT / "docs" / "DEMO_CREDENTIALS.md"
 
 
-def hash_password(password: str, salt: bytes = b"secure_rag_salt_2026") -> str:
-    """Hash password using PBKDF2-HMAC-SHA256 (compatible with standard libraries)."""
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
-    return f"pbkdf2:sha256:100000${salt.hex()}${dk.hex()}"
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    """Hash a password with a per-user random salt using PBKDF2-HMAC-SHA256."""
+    salt = salt or secrets.token_bytes(16)
+    iterations = 310_000
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2:sha256:{iterations}${salt.hex()}${dk.hex()}"
+
+
+def _read_demo_credentials() -> dict[str, str]:
+    if not CREDENTIALS_PATH.is_file():
+        return {}
+    credentials = {}
+    for line in CREDENTIALS_PATH.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        columns = [column.strip() for column in line.strip("|").split("|")]
+        if len(columns) == 2 and columns[0].lower() != "username" and set(columns[0]) != {"-"}:
+            credentials[columns[0]] = columns[1]
+    return credentials
+
+
+def _write_demo_credentials(credentials: dict[str, str]) -> None:
+    CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with CREDENTIALS_PATH.open("w", encoding="utf-8") as credential_file:
+        credential_file.write(
+            "# Local demo credentials\n\n"
+            "This file is generated for this checkout, is excluded from Git, and must not be shared.\n\n"
+            "| Username | Password |\n| --- | --- |\n"
+        )
+        for username, password in sorted(credentials.items()):
+            credential_file.write(f"| {username} | {password} |\n")
 
 
 DEPARTMENTS = [
@@ -234,16 +263,18 @@ def build_database() -> None:
     role_tuples = [(r[0], r[1], r[2], r[3], r[4]) for r in ROLES]
     conn.executemany("INSERT INTO roles (id, department_id, name, seniority, is_executive) VALUES (?, ?, ?, ?, ?);", role_tuples)
 
-    # Insert Employees
-    default_pw_hash = hash_password("password")
+    # Insert Employees with distinct passwords and per-user salts.
     employee_tuples = []
+    employee_credentials = _read_demo_credentials()
     for emp_id, username, full_name, role_id in EMPLOYEES:
         role_info = ROLE_MAP[role_id]
         dept_id = role_info[1]
         seniority = role_info[3]
         is_exec = role_info[4]
+        password = secrets.token_urlsafe(18)
+        employee_credentials[username] = password
         employee_tuples.append((
-            emp_id, username, full_name, default_pw_hash, role_id, dept_id, seniority, is_exec
+            emp_id, username, full_name, hash_password(password), role_id, dept_id, seniority, is_exec
         ))
     conn.executemany("""
         INSERT INTO employees (employee_id, username, full_name, password_hash, role_id, department_id, seniority, is_executive)
@@ -304,6 +335,7 @@ def build_database() -> None:
             VALUES (?, 'role', 'SENIOR_DEVELOPER', 'DENY', 'Explicit security quarantine / project reassignment restriction');
         """, (eng_doc[0],))
 
+    _write_demo_credentials(employee_credentials)
     conn.commit()
 
     # Verify counts
