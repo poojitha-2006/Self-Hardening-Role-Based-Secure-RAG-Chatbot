@@ -17,6 +17,8 @@ from scripts.curate_corpus import (
 )
 from redteam.build_attack_dataset import (
     REMOTE_SOURCES,
+    attack_id,
+    assign_attack_ids,
     direct_request_rows,
     handwritten_rows,
     legacy_handwritten_rows,
@@ -275,6 +277,25 @@ def test_legacy_handwritten_attacks_remain_a_separate_source() -> None:
     assert {row["source"] for row in rows} == {"legacy_handwritten"}
     assert dict(Counter(row["split"] for row in rows)) == {"train": 46, "test": 19}
     assert all(row["license"] == "Original handwritten attacks from this project" for row in rows)
+
+
+def test_attack_ids_are_deterministic_and_unique_across_all_splits() -> None:
+    attacks_dir = ROOT / "data/attacks"
+    rows = [
+        row
+        for split in ("train", "validation", "test")
+        for row in (
+            json.loads(line)
+            for line in (attacks_dir / f"{split}.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+    ]
+    ids = [row["id"] for row in rows]
+    assert len(ids) == len(set(ids))
+
+    sample = [{"source": "Example/Source", "text": "Text  with   spacing"}]
+    assign_attack_ids(sample)
+    assert sample[0]["id"] == attack_id("Example/Source", 1, "Text with spacing")
 
 
 def test_attack_remote_sources_are_not_touched_without_authorization() -> None:

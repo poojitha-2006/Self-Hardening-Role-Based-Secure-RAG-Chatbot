@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import re
@@ -224,9 +225,26 @@ def normalize_record(source: str, split: str, raw: dict[str, Any], license_name:
                  if isinstance(raw.get(key), str) and raw.get(key).strip()), None)
     if not text or not english_heuristic(text):
         return None
-    return {"id": f"{source.lower().replace('/', '-')}-{index:07d}", "source": source,
+    return {"id": attack_id(source, index, text), "source": source,
             "split": split, "category": classify(text), "text": text.strip(),
             "language": "en", "license": license_name}
+
+
+def attack_id(source: str, source_index: int, text: str) -> str:
+    """Create a stable ID from source order and normalized attack text."""
+    source_slug = re.sub(r"[^a-z0-9]+", "-", source.casefold()).strip("-")
+    normalized_text = " ".join(text.split()).casefold()
+    text_hash = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()[:8]
+    return f"{source_slug}-{source_index:07d}-{text_hash}"
+
+
+def assign_attack_ids(rows: list[dict[str, Any]]) -> None:
+    """Assign unique deterministic per-source IDs in output row order."""
+    source_indices: Counter[str] = Counter()
+    for row in rows:
+        source = str(row["source"])
+        source_indices[source] += 1
+        row["id"] = attack_id(source, source_indices[source], str(row["text"]))
 
 
 def load_public_sources(allow_network: bool, manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -399,6 +417,13 @@ def build(allow_network: bool = False, allow_model_download: bool = False, seed:
         seed + 2,
     )
     train, validation, test = embedding_leakage_filter(train, validation, test, allow_model_download, manifest)
+    combined_rows = train + validation + test
+    assign_attack_ids(combined_rows)
+    train_end = len(train)
+    validation_end = train_end + len(validation)
+    train = combined_rows[:train_end]
+    validation = combined_rows[train_end:validation_end]
+    test = combined_rows[validation_end:]
     for split, rows in (("train", train), ("validation", validation), ("test", test)):
         write_jsonl(OUTPUT_DIR / f"{split}.jsonl", rows)
     manifest["split_counts"] = {split: len(rows) for split, rows in (("train", train), ("validation", validation), ("test", test))}
